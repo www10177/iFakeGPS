@@ -1,162 +1,233 @@
 # iFakeGPS 📍
 
-A powerful GUI application for simulating GPS location on iOS devices using `pymobiledevice3`. Fully supports **iOS 17+** (including iOS 18/26) via the RSD tunnel mechanism.
+> **🌐 [繁體中文版本](docs/README_ZHTW.md)**
+
+A powerful GUI application for simulating GPS location on iOS devices (iOS 17+) using `pymobiledevice3`. This application allows you to:
+
+- **Teleport** your device's GPS to any location on Earth with a single click
+- **Walk routes** by creating waypoints and simulating realistic movement
+- **Search locations** by name or address
+- **Fine-tune** walking speed with noise for realistic simulation
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green.svg)
 ![iOS](https://img.shields.io/badge/iOS-14.0--18.x-orange.svg)
 
-## ✨ Features
+---
 
-### 🎯 Single Point Mode
-- Click anywhere on the interactive map to instantly teleport your device's GPS location
-- Manual coordinate entry for precise positioning
-- Search for locations by name or address
+## Table of Contents
 
-### 🚶 Route Walking Mode
-- Click multiple points on the map to create a walking route
-- Visual path display connecting all waypoints
-- Customizable walking speed (1-50 km/h) with slider
-- Start, pause, and stop walking controls
-- Loop mode for continuous walking
+1. [System Requirements](#system-requirements)
+2. [Installation](#installation)
+3. [Quick Start](#quick-start)
+4. [Features](#features)
+5. [Build Windows Executable](#build-windows-executable)
+6. [Troubleshooting](#troubleshooting)
+7. [Technical Details](#technical-details)
+8. [Legal Disclaimer](#legal-disclaimer)
 
-### 🗺️ Interactive Map
-- OpenStreetMap and Google Maps tile support
-- Zoom controls
-- Location search
-- Click-to-place markers
-- Real-time position updates
+---
 
-## 📋 Requirements
+## System Requirements
 
-- **Python 3.9+**
-- **iOS 14.0+** device (iOS 17+ requires special setup)
-- **Windows/macOS/Linux** computer
-- USB cable for connection
-- **Developer Mode** enabled on iOS device (iOS 16+)
+### Software
+- **Python 3.9+** (Recommended: Python 3.11 or newer)
+- **Windows 10/11**, macOS, or Linux
+- **iTunes** (Windows) or **Apple Mobile Device Support**
 
-## 🚀 Installation
+### Hardware
+- USB cable for device connection (Apple-certified recommended)
+- Internet connection (for map tiles)
 
-### 1. Clone or Download
+### iOS Device
+- **iOS 14.0+** supported
+- **iOS 17+** requires special tunnel setup (explained below)
+- **Developer Mode** must be enabled (iOS 16+)
+
+---
+
+## Installation
+
+### Using uv (Recommended)
+
+[uv](https://github.com/astral-sh/uv) is a fast Python package manager.
 
 ```bash
-cd e:\iFakeGPS
+# Install uv if not already installed
+pip install uv
+
+# Clone and enter project
+cd iFakeGPS
+
+# Sync dependencies
+uv sync
 ```
 
-### 2. Install Dependencies
+### Using pip
 
 ```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate (Windows)
+.venv\Scripts\activate
+
+# Activate (macOS/Linux)
+source .venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Enable Developer Mode (iOS 16+)
+### Enable Developer Mode on iOS Device (iOS 16+)
 
-On your iOS device:
 1. Go to **Settings** > **Privacy & Security**
 2. Scroll down and tap **Developer Mode**
 3. Enable it and restart your device
 
-Or use pymobiledevice3:
+Or use the command line:
 ```bash
 pymobiledevice3 amfi enable-developer-mode
 ```
 
-## 📱 Usage
+---
 
-### For iOS 17+ (Requires RSD Tunnel)
+## Quick Start
 
-iOS 17 introduced a new communication mechanism that requires running a tunnel service.
+### For iOS 17+ Devices
 
-#### Step 1: Start the Tunnel (Admin/Root Required)
+iOS 17 introduced a new communication mechanism that requires running a tunnel service with **administrator privileges**.
 
-**On Windows (PowerShell as Administrator):**
+#### Step 1: Start the Tunnel Service
+
+**Option A: Using the provided batch file (Recommended)**
+1. Double-click `start_tunneld.bat`
+2. Click "Yes" when prompted for administrator access
+3. Keep this window open!
+
+**Option B: Manual command**
 ```powershell
-python -m pymobiledevice3 remote start-tunnel
+# Run PowerShell as Administrator
+python -m pymobiledevice3 remote tunneld
 ```
-
-**On macOS/Linux:**
-```bash
-sudo python3 -m pymobiledevice3 remote start-tunnel
-```
-
-The output will show something like:
-```
-Tunnel created for: iPhone
-UDID: 00008030-001234567890802E
-RSD Address: fd75:xxxx:xxxx::1
-RSD Port: 58763
-```
-
-**Keep this terminal running!**
 
 #### Step 2: Mount Developer Disk Image (First Time Only)
 
-In a new terminal:
 ```bash
 pymobiledevice3 mounter auto-mount
 ```
 
 #### Step 3: Run iFakeGPS
 
+**Option A: Using the provided batch file (Recommended)**
+1. Double-click `run.bat`
+2. The application will auto-elevate to administrator
+
+**Option B: Manual command**
 ```bash
+# With uv
+uv run python ifakegps.py
+
+# Or directly
 python ifakegps.py
 ```
 
-#### Step 4: Connect in the App
+#### Step 4: Connect Your Device
 
-1. Copy the **RSD Address** (e.g., `fd75:xxxx:xxxx::1`) to the "RSD Host" field
-2. Copy the **RSD Port** (e.g., `58763`) to the "RSD Port" field
-3. Click **"Connect (RSD)"**
-
----
-
-### For iOS < 17 (Direct USB)
-
-Simply connect your device via USB and:
-
-1. Run `python ifakegps.py`
-2. Click **"USB Connect"**
+1. Your device should appear in the device list automatically
+2. Click on the device to connect
+3. The status will change to "🟢 Connected"
 
 ---
 
-## 🎮 How to Use
+### For iOS < 17 Devices
 
-### Single Point Mode (Default)
-1. Select "Single Point" mode in the sidebar
+1. Connect your device via USB
+2. Run `python ifakegps.py`
+3. Click **"USB Connect"** or select your device from the list
+
+---
+
+## Features
+
+### 🎯 Single Point Mode (Default)
+
+1. Select **"Single Point"** mode in the sidebar
 2. Click any point on the map
-3. Your device's GPS will instantly move to that location
+3. Your device's GPS will instantly teleport to that location
+4. The coordinates are displayed in the sidebar
 
-### Route Walking Mode
-1. Select "Route Mode" in the sidebar
-2. Click multiple points on the map to create a route
-3. Adjust walking speed with the slider (1-50 km/h)
-4. Click **"▶ Start"** to begin walking
-5. Use **"⏸ Pause"** or **"⏹ Stop"** to control
+### 🚶 Route Walking Mode
 
-### Manual Coordinates
-1. Enter latitude and longitude in the sidebar
+1. Select **"Route Mode"** in the sidebar
+2. Click multiple points on the map to create a walking route
+3. A path line will connect your waypoints
+4. **Right-click** on any marker to remove it
+
+#### Walking Controls:
+- **Speed Slider (1-50 km/h)**: Adjust walking speed
+- **Noise Slider (0-50%)**: Add random speed variation for realistic movement
+- **▶ Start**: Begin walking the route
+- **⏸ Pause**: Pause walking (retains position)
+- **⏹ Stop**: Stop walking and reset
+- **Loop**: Enable continuous loop walking
+- **🗑 Clear Route**: Remove all waypoints
+
+### 📍 Manual Coordinates
+
+1. Enter latitude and longitude in the sidebar fields
 2. Click **"📍 Set Location"**
+3. The map will center on the location and send it to the device
 
-### Search Location
-1. Type a location name in the search bar
-2. Press Enter or click **"🔍 Search"**
+### 🔍 Location Search
+
+1. Type a location name in the search bar (e.g., "Tokyo Tower")
+2. Press **Enter** or click **"🔍 Search"**
 3. The map will center on that location
+4. Click to set it as your GPS location
+
+### 🔄 Clear Simulated Location
+
+Click **"🔄 Clear Simulated Location"** to restore the device's real GPS.
 
 ---
 
-## 🔧 Troubleshooting
+## Build Windows Executable
+
+To create a standalone Windows executable (.exe) that requires administrator privileges:
+
+**Option 1: Using batch file**
+```bash
+pack.bat
+```
+
+**Option 2: Using Python script**
+```bash
+python pack.py
+```
+
+**Option 3: Using uv**
+```bash
+uv run python pack.py
+```
+
+The output executable will be created at `dist/iFakeGPS.exe` and will automatically request administrator privileges when launched.
+
+---
+
+## Troubleshooting
 
 ### "Connection Failed" Error
 
 1. **Check USB connection** - Use an Apple-certified cable
 2. **Trust the computer** - Tap "Trust" on your iOS device when prompted
 3. **Check Developer Mode** - Must be enabled for iOS 16+
-4. **Restart usbmuxd** (macOS/Linux): `sudo killall usbmuxd`
-5. **Install iTunes/Apple Mobile Device Support** (Windows)
+4. **Install iTunes** (Windows) - Required for device drivers
+5. **Restart usbmuxd** (macOS/Linux): `sudo killall usbmuxd`
 
 ### iOS 17+ Tunnel Issues
 
-1. **Run as admin/root** - Tunnels require elevated privileges
+1. **Run as Administrator** - Tunnels require elevated privileges
 2. **Keep tunnel running** - Don't close the tunnel terminal
 3. **Check firewall** - Allow Python through Windows Firewall
 4. **IPv6 support** - Ensure your system supports IPv6
@@ -164,7 +235,7 @@ Simply connect your device via USB and:
 ### Location Not Changing
 
 1. **Close location-dependent apps** - GPS simulation works best when apps are freshly launched
-2. **Developer Disk Image** - Run `pymobiledevice3 mounter auto-mount`
+2. **Mount Developer Disk Image** - Run `pymobiledevice3 mounter auto-mount`
 3. **Restart the target app** - Some apps cache location data
 
 ### Map Not Loading
@@ -172,9 +243,16 @@ Simply connect your device via USB and:
 1. **Internet connection** - Required for map tiles
 2. **Firewall/Proxy** - Allow access to OpenStreetMap/Google servers
 
+### Device Not Found
+
+1. Ensure tunneld is running with admin privileges
+2. Check USB cable connection
+3. Unlock your device and trust the computer
+4. Wait a few seconds for device discovery
+
 ---
 
-## 📚 Technical Details
+## Technical Details
 
 ### How It Works
 
@@ -190,25 +268,37 @@ The location simulation uses the **DeveloperDiskImage** services:
 ### Walking Algorithm
 
 The route walker:
-1. Interpolates between waypoints
+1. Interpolates between waypoints using linear interpolation
 2. Calculates realistic timing based on distance and speed
 3. Updates device location every 0.5 seconds
 4. Uses Haversine formula for accurate distance calculation
+5. Applies optional speed noise for realistic movement
+
+### Key Components
+
+| Component | Description |
+|-----------|-------------|
+| `TunneldManager` | Manages the tunneld service for iOS 17+ |
+| `DeviceManager` | Handles device connection and location simulation |
+| `RouteWalker` | Manages route walking with interpolation |
+| `iFakeGPSApp` | Main GUI application |
 
 ---
 
-## ⚖️ Legal Disclaimer
+## Legal Disclaimer
 
-This tool is intended for **development and testing purposes only**. Using location spoofing:
+⚠️ **This tool is intended for development and testing purposes only.**
+
+Using location spoofing:
 - May violate Terms of Service of apps
 - May be illegal in some jurisdictions
 - Should not be used for fraud or deception
 
-Use responsibly and at your own risk.
+**Use responsibly and at your own risk.**
 
 ---
 
-## 🙏 Credits
+## Credits
 
 - [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) - iOS device communication
 - [tkintermapview](https://github.com/TomSchimansky/TkinterMapView) - Interactive map widget
@@ -216,6 +306,6 @@ Use responsibly and at your own risk.
 
 ---
 
-## 📄 License
+## License
 
 MIT License - Feel free to use and modify.
