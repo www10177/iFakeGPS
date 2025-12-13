@@ -219,6 +219,7 @@ class DeviceManager:
         devices = []
         try:
             import requests
+            from pymobiledevice3.lockdown import create_using_usbmux
 
             # Try to get devices from tunneld HTTP API (root endpoint /)
             try:
@@ -240,17 +241,38 @@ class DeviceManager:
                             rsd_port = tunnel_info.get("tunnel-port", 0)
 
                             if rsd_address and rsd_port:
+                                # Try to get device name from lockdown
+                                device_name = f"iOS Device ({udid[:8]}...)"
+                                product_type = "Unknown"
+                                ios_version = "17+"
+
+                                try:
+                                    lockdown = create_using_usbmux(serial=udid)
+                                    device_name = (
+                                        lockdown.display_name
+                                        or lockdown.get_value(key="DeviceName")
+                                        or device_name
+                                    )
+                                    product_type = lockdown.product_type or product_type
+                                    ios_version = (
+                                        lockdown.product_version or ios_version
+                                    )
+                                    lockdown.close()
+                                except Exception:
+                                    # If lockdown fails, use defaults
+                                    pass
+
                                 device_info = DeviceInfo(
                                     udid=udid,
-                                    name=f"iOS Device ({udid[:8]}...)",
-                                    product_type="Unknown",
-                                    ios_version="17+",
+                                    name=device_name,
+                                    product_type=product_type,
+                                    ios_version=ios_version,
                                     rsd_address=rsd_address,
                                     rsd_port=rsd_port,
                                 )
                                 devices.append(device_info)
                                 logger.info(
-                                    f"Found tunnel for device: {udid[:8]}... at {rsd_address}:{rsd_port}"
+                                    f"Found device: {device_name} ({product_type} - iOS {ios_version})"
                                 )
                         except Exception as e:
                             logger.warning(f"Failed to parse tunnel info: {e}")
@@ -593,6 +615,7 @@ class RouteWalker:
         self.current_index = 0
         self.current_position: Optional[tuple[float, float]] = None
         self.speed_mps = 1.4  # Default walking speed in meters per second (5 km/h)
+        self.noise_percent = 0  # Speed noise as percentage (0-50)
         self._walk_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self.on_position_update: Optional[callable] = None
@@ -608,6 +631,19 @@ class RouteWalker:
     def set_speed(self, speed_mps: float):
         """Set walking speed in meters per second."""
         self.speed_mps = max(0.1, min(speed_mps, 100))  # Clamp between 0.1 and 100 m/s
+
+    def set_noise(self, noise_percent: float):
+        """Set speed noise as percentage (0-50)."""
+        self.noise_percent = max(0, min(noise_percent, 50))
+
+    def get_current_speed(self) -> float:
+        """Get current speed with optional noise applied."""
+        import random
+
+        if self.noise_percent > 0:
+            noise_factor = 1 + (random.uniform(-1, 1) * self.noise_percent / 100)
+            return self.speed_mps * noise_factor
+        return self.speed_mps
 
     @staticmethod
     def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -681,18 +717,21 @@ class RouteWalker:
                 self.current_index += 1
                 continue
 
-            # Calculate time to walk this segment
-            segment_time = distance / self.speed_mps
-            steps = max(1, int(segment_time / update_interval))
+            # Walk this segment with dynamic speed updates
+            distance_traveled = 0.0
 
-            for step in range(steps):
+            while distance_traveled < distance:
                 if self._stop_event.is_set():
                     break
 
                 while self.paused and not self._stop_event.is_set():
                     time.sleep(0.1)
 
-                fraction = step / steps
+                if self._stop_event.is_set():
+                    break
+
+                # Calculate current position based on distance traveled
+                fraction = distance_traveled / distance
                 lat, lon = self.interpolate_position(
                     start_point.latitude,
                     start_point.longitude,
@@ -711,6 +750,9 @@ class RouteWalker:
                     self.on_position_update(lat, lon)
 
                 time.sleep(update_interval)
+
+                # Use current speed with noise (dynamically updated from slider)
+                distance_traveled += self.get_current_speed() * update_interval
 
             self.current_index += 1
 
@@ -856,31 +898,6 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.no_devices_label.grid(row=0, column=0, padx=10, pady=20)
 
-        # Manual RSD connection
-        manual_frame = ctk.CTkFrame(device_frame, fg_color="transparent")
-        manual_frame.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
-        manual_frame.grid_columnconfigure(1, weight=1)
-
-        self.host_entry = ctk.CTkEntry(
-            manual_frame, placeholder_text="RSD Host (fd75:...)", height=28
-        )
-        self.host_entry.grid(row=0, column=0, columnspan=2, pady=(5, 2), sticky="ew")
-
-        self.port_entry = ctk.CTkEntry(
-            manual_frame, placeholder_text="Port", width=80, height=28
-        )
-        self.port_entry.grid(row=1, column=0, pady=2, sticky="w")
-
-        self.manual_connect_btn = ctk.CTkButton(
-            manual_frame,
-            text="Manual Connect",
-            command=self._connect_manual,
-            height=28,
-            fg_color="#6366f1",
-            hover_color="#4f46e5",
-        )
-        self.manual_connect_btn.grid(row=1, column=1, padx=(5, 0), pady=2, sticky="ew")
-
         # Connection status
         self.conn_status = ctk.CTkLabel(
             device_frame,
@@ -888,7 +905,7 @@ class iFakeGPSApp(ctk.CTk):
             font=ctk.CTkFont(size=12),
             text_color="#ef4444",
         )
-        self.conn_status.grid(row=3, column=0, padx=10, pady=(5, 10))
+        self.conn_status.grid(row=2, column=0, padx=10, pady=(5, 10))
 
         # Disconnect button
         self.disconnect_btn = ctk.CTkButton(
@@ -899,7 +916,7 @@ class iFakeGPSApp(ctk.CTk):
             hover_color="#4b5563",
             height=28,
         )
-        self.disconnect_btn.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="ew")
+        self.disconnect_btn.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
 
         # Mode selection
         mode_frame = ctk.CTkFrame(sidebar)
@@ -962,6 +979,25 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.speed_slider.set(5)
 
+        # Speed noise slider (randomness)
+        noise_label = ctk.CTkLabel(self.route_frame, text="Speed Noise:")
+        noise_label.grid(row=3, column=0, padx=10, pady=5, sticky="w")
+
+        self.noise_value_label = ctk.CTkLabel(self.route_frame, text="0%")
+        self.noise_value_label.grid(row=3, column=1, padx=10, pady=5, sticky="e")
+
+        self.noise_slider = ctk.CTkSlider(
+            self.route_frame,
+            from_=0,
+            to=50,
+            number_of_steps=50,
+            command=self._on_noise_change,
+        )
+        self.noise_slider.grid(
+            row=4, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
+        )
+        self.noise_slider.set(0)
+
         self.route_frame.grid_columnconfigure(0, weight=1)
         self.route_frame.grid_columnconfigure(1, weight=1)
 
@@ -972,12 +1008,12 @@ class iFakeGPSApp(ctk.CTk):
             font=ctk.CTkFont(size=12),
             text_color="gray",
         )
-        self.route_info.grid(row=3, column=0, columnspan=2, padx=10, pady=5)
+        self.route_info.grid(row=5, column=0, columnspan=2, padx=10, pady=5)
 
         # Route buttons
         route_btn_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
         route_btn_frame.grid(
-            row=4, column=0, columnspan=2, padx=10, pady=10, sticky="ew"
+            row=6, column=0, columnspan=2, padx=10, pady=10, sticky="ew"
         )
 
         self.start_walk_btn = ctk.CTkButton(
@@ -1016,7 +1052,7 @@ class iFakeGPSApp(ctk.CTk):
             self.route_frame, text="Loop route continuously", variable=self.loop_var
         )
         loop_check.grid(
-            row=5, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w"
+            row=7, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w"
         )
 
         # Clear route button
@@ -1028,7 +1064,7 @@ class iFakeGPSApp(ctk.CTk):
             hover_color="#4b5563",
         )
         self.clear_route_btn.grid(
-            row=6, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew"
+            row=8, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew"
         )
 
         # Coordinates section
@@ -1506,17 +1542,33 @@ class iFakeGPSApp(ctk.CTk):
 
     def _add_route_point(self, lat: float, lon: float):
         """Add a point to the route."""
+        point_index = len(self.route_points)
+
         # Create marker
         marker = self.map_widget.set_marker(
             lat,
             lon,
-            text=f"Point {len(self.route_points) + 1}",
+            text=f"Point {point_index + 1}",
             marker_color_circle="#3b82f6",
             marker_color_outside="#1e40af",
         )
 
         point = RoutePoint(latitude=lat, longitude=lon, marker=marker)
         self.route_points.append(point)
+
+        # Bind right-click to remove this point
+        # Store the point reference for the callback
+        def on_marker_right_click(event, pt=point):
+            self._remove_route_point(pt)
+
+        # Try to bind right-click to the marker's canvas items
+        try:
+            if hasattr(marker, "canvas_marker_icon"):
+                marker.canvas_marker_icon.bind("<Button-3>", on_marker_right_click)
+            if hasattr(marker, "canvas_text"):
+                marker.canvas_text.bind("<Button-3>", on_marker_right_click)
+        except Exception:
+            pass  # Marker binding not supported in this version
 
         # Update route path on map
         self._update_route_path()
@@ -1525,8 +1577,31 @@ class iFakeGPSApp(ctk.CTk):
         self._update_route_info()
 
         self.status_label.configure(
-            text=f"Added point {len(self.route_points)} at {lat:.6f}, {lon:.6f}"
+            text=f"Added point {len(self.route_points)} at {lat:.6f}, {lon:.6f} (right-click to remove)"
         )
+
+    def _remove_route_point(self, point: RoutePoint):
+        """Remove a point from the route."""
+        if point in self.route_points:
+            # Remove marker from map
+            if point.marker:
+                point.marker.delete()
+
+            # Remove from list
+            self.route_points.remove(point)
+
+            # Renumber remaining markers
+            for i, pt in enumerate(self.route_points):
+                if pt.marker:
+                    pt.marker.set_text(f"Point {i + 1}")
+
+            # Update path and info
+            self._update_route_path()
+            self._update_route_info()
+
+            self.status_label.configure(
+                text=f"Removed point. {len(self.route_points)} points remaining."
+            )
 
     def _update_route_path(self):
         """Update the route path visualization on the map."""
@@ -1588,6 +1663,12 @@ class iFakeGPSApp(ctk.CTk):
 
         self.speed_value_label.configure(text=f"{speed_kmh:.1f} km/h")
         self.route_walker.set_speed(speed_mps)
+
+    def _on_noise_change(self, value):
+        """Handle noise slider change."""
+        noise_percent = float(value)
+        self.noise_value_label.configure(text=f"{noise_percent:.0f}%")
+        self.route_walker.set_noise(noise_percent)
 
     def _start_walking(self):
         """Start walking the route."""
