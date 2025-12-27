@@ -10,6 +10,29 @@
 
 ---
 
+## ⚙️ 設定與先決條件
+
+在使用 iFakeGPS 之前，確保您具備以下先決條件至關重要：
+
+1.  **iTunes (僅限 Windows)**：
+    *   您**必須**安裝 iTunes（如果可能，請勿使用 Microsoft Store 版本，儘管 Store 版本通常也適用於驅動程式）。
+    *   這是偵測您的裝置所需的 Apple 驅動程式所必需的。
+    *   檢查後，執行 iTunes 並確保它能看到您的裝置。
+
+2.  **iOS 開發者模式 (iOS 16+)**：
+    *   在您的 iPhone/iPad 上，前往 **設定** -> **隱私權與安全性**。
+    *   向下捲動至 **開發者模式** 並將其**開啟**。
+    *   您需要重新啟動裝置。重新啟動後，解鎖並在警示中點選「開啟」，然後輸入您的密碼。
+    *   *疑難排解：如果您沒看到「開發者模式」選項：*
+        *   確保您的裝置已連接並「信任」此電腦。
+        *   如果您是從原始碼執行，請執行：`uv run python -m pymobiledevice3 amfi reveal-developer-mode`
+        *   或者是使用 iCareFone 或 3uTools 等第三方工具來觸發它。
+
+3.  **信任電腦**：
+    *   當透過 USB 連接裝置時，請務必在裝置上的「信任這部電腦？」提示中點選「信任」。
+
+---
+
 ## 📥 下載並執行
 
 **已提供預先建置的 Windows 執行檔！** 無需安裝 Python。
@@ -119,11 +142,8 @@ pymobiledevice3 mounter auto-mount
 ### 建置 Windows 執行檔
 
 ```bash
-# 使用批次檔
+# 使用批次檔 (自動使用 uv)
 pack.bat
-
-# 或使用 Python
-python pack.py
 ```
 
 輸出：`dist/iFakeGPS.exe`（自動要求管理員權限）

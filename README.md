@@ -73,7 +73,28 @@ The app automatically manages the tunnel service. If you have issues:
 <details>
 <summary>Click to expand development setup</summary>
 
-### Installation
+### Setup & Prerequisites
+
+Before using iFakeGPS, ensuring you have the following prerequisites is **CRITICAL**:
+
+1.  **iTunes (Windows Only)**:
+    *   You **MUST** have iTunes installed (not the Microsoft Store version if possible, though Store version usually works for drivers).
+    *   This is required for the necessary Apple drivers to detect your device.
+    *   After checking, run iTunes and ensure it can see your device.
+
+2.  **iOS Developer Mode (iOS 16+)**:
+    *   On your iPhone/iPad, go to **Settings** -> **Privacy & Security**.
+    *   Scroll down to **Developer Mode** and turn it **ON**.
+    *   You will need to restart your device. After restart, unlock it and tap "Turn On" in the alert, then enter your passcode.
+    *   *Troubleshooting: If you don't see the "Developer Mode" option:*
+        *   Ensure your device is connected and "Trusted".
+        *   If running from source, run: `uv run python -m pymobiledevice3 amfi reveal-developer-mode`
+        *   Or use a 3rd party tool like iCareFone or 3uTools to trigger it.
+
+3.  **Trust Computer**:
+    *   When connecting your device via USB, ensure you tap **"Trust"** on the "Trust This Computer?" prompt on your device.
+
+## Installation
 
 ```bash
 # Clone the repository

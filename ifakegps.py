@@ -107,6 +107,14 @@ class TunneldManager:
             # Note: This may require admin privileges
             python_exec = sys.executable
 
+            # Determine command arguments based on environment
+            if getattr(sys, "frozen", False):
+                # Running as frozen executable - use internal flag to avoid recursion loop
+                cmd_args = [python_exec, "--internal-tunneld"]
+            else:
+                # Running as script
+                cmd_args = [python_exec, "-m", "pymobiledevice3", "remote", "tunneld"]
+
             # Create the process with CREATE_NEW_CONSOLE flag on Windows to avoid blocking
             if sys.platform == "win32":
                 # On Windows, we need to run with proper privileges
@@ -115,7 +123,7 @@ class TunneldManager:
                 startupinfo.wShowWindow = subprocess.SW_HIDE
 
                 self.process = subprocess.Popen(
-                    [python_exec, "-m", "pymobiledevice3", "remote", "tunneld"],
+                    cmd_args,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     startupinfo=startupinfo,
@@ -123,7 +131,7 @@ class TunneldManager:
                 )
             else:
                 self.process = subprocess.Popen(
-                    [python_exec, "-m", "pymobiledevice3", "remote", "tunneld"],
+                    cmd_args,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
@@ -364,8 +372,7 @@ class DeviceManager:
                     else:
                         logger.warning(
                             f"Device {device_name} found but no tunnel available. "
-                            "Start tunneld with admin privileges: "
-                            "run start_tunneld.bat as Administrator"
+                            "Please restart the application as Administrator to enable connectivity."
                         )
 
                 except Exception as e:
@@ -820,6 +827,116 @@ class iFakeGPSApp(ctk.CTk):
         # Auto-start tunneld and discover devices on startup
         self.after(500, self._start_tunneld_and_discover)
 
+    def _show_dev_mode_guide(self):
+        """Show the Developer Mode guide window."""
+        guide = ctk.CTkToplevel(self)
+        guide.title("如何開啟開發者模式 (How to Enable Developer Mode)")
+        guide.geometry("500x700")
+
+        # Make modal
+        guide.transient(self)
+        guide.grab_set()
+
+        # Content
+        scroll = ctk.CTkScrollableFrame(guide)
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+        title = ctk.CTkLabel(
+            scroll,
+            text="📱 開啟 iOS 開發者模式\n(Enable Developer Mode)",
+            font=ctk.CTkFont(size=20, weight="bold"),
+        )
+        title.pack(pady=(10, 20))
+
+        steps = [
+            (
+                "1. 進入設定 (Settings)",
+                "進入 iPhone/iPad 的「設定」。\nGo to Settings.",
+            ),
+            (
+                "2. 隱私權與安全性 (Privacy)",
+                "點選「隱私權與安全性」。\nTap 'Privacy & Security'.",
+            ),
+            (
+                "3. 開發者模式 (Developer Mode)",
+                "滑動到最底部，找到「開發者模式」。\nScroll to bottom, find 'Developer Mode'.",
+            ),
+            (
+                "4. 開啟開關 (Turn On)",
+                "進入並將開關打開。系統會要求重新啟動。\nTurn it on. Device will restart.",
+            ),
+            (
+                "5. 確認開啟 (Confirm)",
+                "重啟後解鎖，點選「開啟」並輸入密碼。\nUnlock and tap 'Turn On'.",
+            ),
+            (
+                "6. 連接電腦 (Connect)",
+                "使用 USB 連接電腦，並點選「信任」。\nConnect via USB and tap 'Trust'.",
+            ),
+        ]
+
+        for step_title, step_desc in steps:
+            step_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+            step_frame.pack(fill="x", pady=10)
+
+            t = ctk.CTkLabel(
+                step_frame,
+                text=step_title,
+                font=ctk.CTkFont(size=16, weight="bold"),
+                anchor="w",
+            )
+            t.pack(fill="x")
+
+            d = ctk.CTkLabel(
+                step_frame,
+                text=step_desc,
+                font=ctk.CTkFont(size=14),
+                anchor="w",
+                justify="left",
+            )
+            d.pack(fill="x", padx=10)
+
+        # Button to open full manual
+        def open_manual():
+            import os
+            import sys
+
+            try:
+                if getattr(sys, "frozen", False):
+                    base_path = sys._MEIPASS
+                else:
+                    base_path = os.path.dirname(os.path.abspath(__file__))
+
+                manual_path = os.path.join(base_path, "docs", "USER_MANUAL_ZH.md")
+
+                if not os.path.exists(manual_path):
+                    # Fallback to current directory
+                    manual_path = os.path.abspath("docs/USER_MANUAL_ZH.md")
+
+                if sys.platform == "win32":
+                    os.startfile(manual_path)
+                else:
+                    import subprocess
+
+                    opener = "open" if sys.platform == "darwin" else "xdg-open"
+                    subprocess.call([opener, manual_path])
+            except Exception as e:
+                messagebox.showerror("Error", f"Cannot open manual: {e}")
+
+        manual_btn = ctk.CTkButton(
+            scroll, text="📖 打開完整說明書 (Open Manual)", command=open_manual
+        )
+        manual_btn.pack(pady=20)
+
+        close_btn = ctk.CTkButton(
+            scroll,
+            text="我知道了 (Got it)",
+            command=guide.destroy,
+            fg_color="transparent",
+            border_width=1,
+        )
+        close_btn.pack(pady=(0, 20))
+
     def _create_ui(self):
         """Create the main UI layout."""
         # Configure grid
@@ -853,11 +970,22 @@ class iFakeGPSApp(ctk.CTk):
             font=ctk.CTkFont(size=14),
             text_color="gray",
         )
-        subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 15))
+        subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 10))
+
+        # Help Button
+        help_btn = ctk.CTkButton(
+            sidebar,
+            text="❓ 如何開啟開發者模式？\n(Enable Developer Mode)",
+            command=self._show_dev_mode_guide,
+            fg_color="#7c3aed",
+            hover_color="#6d28d9",
+            height=40,
+        )
+        help_btn.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="ew")
 
         # Device selection section
         device_frame = ctk.CTkFrame(sidebar)
-        device_frame.grid(row=2, column=0, padx=15, pady=10, sticky="ew")
+        device_frame.grid(row=3, column=0, padx=15, pady=10, sticky="ew")
 
         device_header = ctk.CTkFrame(device_frame, fg_color="transparent")
         device_header.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
@@ -920,7 +1048,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Mode selection
         mode_frame = ctk.CTkFrame(sidebar)
-        mode_frame.grid(row=3, column=0, padx=15, pady=10, sticky="ew")
+        mode_frame.grid(row=4, column=0, padx=15, pady=10, sticky="ew")
 
         mode_label = ctk.CTkLabel(
             mode_frame, text="🎯 Mode", font=ctk.CTkFont(size=16, weight="bold")
@@ -949,7 +1077,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Route controls
         self.route_frame = ctk.CTkFrame(sidebar)
-        self.route_frame.grid(row=4, column=0, padx=15, pady=10, sticky="ew")
+        self.route_frame.grid(row=5, column=0, padx=15, pady=10, sticky="ew")
 
         route_label = ctk.CTkLabel(
             self.route_frame,
@@ -1069,7 +1197,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Coordinates section
         coord_frame = ctk.CTkFrame(sidebar)
-        coord_frame.grid(row=5, column=0, padx=15, pady=10, sticky="ew")
+        coord_frame.grid(row=6, column=0, padx=15, pady=10, sticky="ew")
 
         coord_label = ctk.CTkLabel(
             coord_frame,
@@ -1264,7 +1392,7 @@ class iFakeGPSApp(ctk.CTk):
                     self.after(
                         0,
                         lambda: self.status_label.configure(
-                            text="⚠️ Run as Administrator to auto-start tunneld, or run start_tunneld.bat"
+                            text="⚠️ Run as Administrator to auto-start tunneld."
                         ),
                     )
                     # Wait and check if user started it manually
@@ -1326,15 +1454,15 @@ class iFakeGPSApp(ctk.CTk):
         if not devices:
             self.no_devices_label = ctk.CTkLabel(
                 self.device_listbox_frame,
-                text="No devices with tunnels found.\n\n"
-                "Run start_tunneld.bat\nas Administrator first!",
+                text="No devices found.\n\n"
+                "Please restart the application\nas Administrator to enable connectivity!",
                 font=ctk.CTkFont(size=12),
                 text_color="orange",
                 justify="center",
             )
             self.no_devices_label.grid(row=0, column=0, padx=10, pady=20)
             self.status_label.configure(
-                text="⚠️ No tunnels found. Run start_tunneld.bat as Administrator."
+                text="⚠️ No connected devices found. Please run as Administrator."
             )
         else:
             for i, device in enumerate(devices):
@@ -1897,4 +2025,26 @@ def main():
 
 
 if __name__ == "__main__":
+    # Fix for multiprocessing support in frozen applications
+    import multiprocessing
+
+    multiprocessing.freeze_support()
+
+    # Handle internal tunneld execution for frozen app
+    if len(sys.argv) > 1 and sys.argv[1] == "--internal-tunneld":
+        try:
+            # Import and run pymobiledevice3 CLI directly
+            from pymobiledevice3.__main__ import cli
+
+            # Set up argv for the CLI: ['pymobiledevice3', 'remote', 'tunneld']
+            sys.argv = ["pymobiledevice3", "remote", "tunneld"]
+            cli()
+        except Exception as e:
+            # Log errors to stderr so they appear in console
+            print(f"Failed to run internal tunneld: {e}", file=sys.stderr)
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(0)
+
     main()

@@ -9,26 +9,30 @@ echo        iFakeGPS - Windows EXE Packer
 echo =============================================
 echo.
 
-:: Check if PyInstaller is installed
-python -c "import PyInstaller" 2>nul
+:: Check if uv is installed
+uv --version >nul 2>&1
 if %errorLevel% neq 0 (
-    echo [INFO] PyInstaller not found. Installing...
-    pip install pyinstaller
-    if %errorLevel% neq 0 (
-        echo [ERROR] Failed to install PyInstaller.
-        pause
-        exit /b 1
-    )
+    echo [ERROR] uv is not installed. Please install uv first.
+    echo Visit https://github.com/astral-sh/uv for installation instructions.
+    pause
+    exit /b 1
+)
+
+:: Sync dependencies to ensure pyinstaller is available
+echo [INFO] Syncing dependencies...
+uv sync
+if %errorLevel% neq 0 (
+    echo [ERROR] Failed to sync dependencies.
+    pause
+    exit /b 1
 )
 
 :: Change to script directory
 cd /d "%~dp0"
 
-:: Activate virtual environment if exists
-if exist ".venv\Scripts\activate.bat" (
-    echo [INFO] Activating virtual environment...
-    call .venv\Scripts\activate.bat
-)
+:: No need to manually activate venv when using uv run
+:: But we can ensure we are in the right directory
+
 
 echo [INFO] Creating Windows executable...
 echo.
@@ -43,9 +47,8 @@ echo [INFO] Generating PyInstaller spec file with UAC admin manifest...
 :: --icon: Use a custom icon if available
 :: --name: Name of the output executable
 
-pyinstaller ^
+uv run pyinstaller ^
     --onefile ^
-    --windowed ^
     --uac-admin ^
     --name "iFakeGPS" ^
     --add-data "docs;docs" ^
