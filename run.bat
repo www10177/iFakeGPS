@@ -21,6 +21,6 @@ echo.
 
 :: Activate venv and run the app
 :: call .venv\Scripts\activate.bat
-uv run python ifakegps.py
+uv run python run.py
 
 pause

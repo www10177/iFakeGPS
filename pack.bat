@@ -58,6 +58,7 @@ uv run python -m PyInstaller ^
     --hidden-import=PIL._tkinter_finder ^
     --hidden-import=tkintermapview ^
     --hidden-import=customtkinter ^
+    --hidden-import=winsdk ^
     --hidden-import=python_multipart ^
     --hidden-import=pymobiledevice3 ^
     --hidden-import=gpxpy ^
@@ -77,6 +78,7 @@ uv run python -m PyInstaller ^
     --collect-all pytun_pmd3 ^
     --collect-all customtkinter ^
     --collect-all tkintermapview ^
+    --collect-all winsdk ^
     --copy-metadata readchar ^
     --copy-metadata inquirer3 ^
     --copy-metadata pymobiledevice3 ^

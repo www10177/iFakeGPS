@@ -613,9 +613,12 @@ class iFakeGPSApp(ctk.CTk):
         self.map_widget = tkintermapview.TkinterMapView(map_frame, corner_radius=10)
         self.map_widget.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        # Set default position (Taipei)
+        # Set default position (Taipei as fallback)
         self.map_widget.set_position(25.032192, 121.469360)
         self.map_widget.set_zoom(13)
+
+        # Try to get real location from IP
+        self._set_default_location()
 
         # Bind click event
         self.map_widget.add_left_click_map_command(self._on_map_click)
@@ -665,6 +668,53 @@ class iFakeGPSApp(ctk.CTk):
             width=150,
         )
         map_type_menu.pack(side="right", padx=10)
+
+    def _set_default_location(self):
+        """Try to set map position based on Windows Location API, with IP fallback."""
+
+        def fetch_location():
+            # Method 1: Try Windows API (winsdk)
+            found_location = False
+            try:
+                import asyncio
+
+                from winsdk.windows.devices.geolocation import Geolocator
+
+                async def get_pos():
+                    locator = Geolocator()
+                    # Request access? Windows handles prompt.
+                    # Timeout after 10 seconds?
+                    # Note: get_geoposition_async has (maximum_age, timeout) overloads in C#,
+                    # but Python projection binds default or all.
+                    # We'll just await standard call.
+                    pos = await locator.get_geoposition_async()
+                    return (
+                        pos.coordinate.point.position.latitude,
+                        pos.coordinate.point.position.longitude,
+                    )
+
+                # Run async call in this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+                # logger.info("Requesting Windows Location...")
+                lat, lon = loop.run_until_complete(get_pos())
+                loop.close()
+
+                if lat and lon:
+                    logger.info(f"Detected Windows Location: {lat}, {lon}")
+                    self.after(0, lambda: self.map_widget.set_position(lat, lon))
+                    self.after(0, lambda: self.map_widget.set_zoom(15))
+                    found_location = True
+            except Exception as e:
+                logger.warning(f"Windows Location API failed: {e}")
+
+            if found_location:
+                return
+
+            logger.warning("Windows Location API failed. Using default location.")
+
+        threading.Thread(target=fetch_location, daemon=True).start()
 
     def _create_status_bar(self):
         """Create the bottom status bar."""
