@@ -49,6 +49,7 @@ echo [INFO] Generating PyInstaller spec file with UAC admin manifest...
 
 uv run python -m PyInstaller ^
     --onefile ^
+    --console ^
     --uac-admin ^
     --name "iFakeGPS" ^
     --icon "app.ico" ^

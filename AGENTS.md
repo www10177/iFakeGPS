@@ -19,10 +19,22 @@ This project uses `uv` for dependency management and execution.
         *   This requires Administrator privileges on Windows.
         *   **Frozen App (EXE)**: When running as a PyInstaller frozen exe, the app spawns a subprocess with `--internal-tunneld` to avoid infinite recursion. BE CAREFUL when modifying the `if __name__ == "__main__":` block or `TunneldManager.start`.
 
-3.  **Code Structure**:
-    *   `ifakegps.py`: The main entry point and single-file application logic.
-    *   `pack.bat`: The build script to generate a standalone Windows executable.
-    *   `pyproject.toml`: Project configuration and dependencies.
+3.  **Code Structure (Refactored)**:
+    *   **Architecture**: The project follows Clean Architecture principles, split into:
+        *   `src/core`: Business logic (`DeviceManager`, `TunneldManager`, `RouteWalker`, `models`).
+        *   `src/ui`: User Interface (`iFakeGPSApp` in `app.py`).
+        *   `src/utils`: Utilities (`logger`, helper functions).
+    *   `src/main.py`: The production entry point (handles multiprocessing, args).
+    *   `run.py`: The developer entry point (runs from source).
+    *   `pack.bat`: Build script (updated for new structure and `winsdk`).
+
+4.  **New Features & Optimizations**:
+    *   **Geolocation**: Uses **Windows Geolocation API (`winsdk`)** for high-precision location detection. Fallbacks to hardcoded default (Taipei).
+    *   **Map Performance**:
+        *   Default provider: **Google Maps** (Normal).
+        *   Caching: **SQLite database** stored in `%LOCALAPPDATA%\iFakeGPS` (Windows) or `~/.cache` (Linux/Mac) for persistence and speed.
+        *   Optimization: Reduced `max_zoom` to 19 to prevent 404 stalls.
+    *   **Async/Threading**: Extensive use of threading for non-blocking UI (device scanning, location fetching).
 
     *   Documentation is in `README.md` (Main English) and `docs/README_zh-TW.md`.
     *   Keep user-facing instructions simple.

@@ -540,7 +540,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Coordinates section
         coord_frame = ctk.CTkFrame(sidebar)
-        coord_frame.grid(row=6, column=0, padx=15, pady=10, sticky="ew")
+        coord_frame.grid(row=7, column=0, padx=15, pady=10, sticky="ew")
 
         coord_label = ctk.CTkLabel(
             coord_frame,
@@ -609,9 +609,68 @@ class iFakeGPSApp(ctk.CTk):
         map_frame.grid_columnconfigure(0, weight=1)
         map_frame.grid_rowconfigure(0, weight=1)
 
-        # Create map widget
-        self.map_widget = tkintermapview.TkinterMapView(map_frame, corner_radius=10)
+        # Create map widget with explicit caching for better performance
+        # Use standard system cache directories (e.g., AppData/Local on Windows)
+        if os.name == "nt":
+            base_dir = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+            cache_dir = os.path.join(base_dir, "iFakeGPS")
+        else:
+            cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "iFakeGPS")
+
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_path = os.path.join(cache_dir, "map_cache.db")
+
+        # Manually initialize DB schema to fix 0-byte issue
+        try:
+            import sqlite3
+
+            conn = sqlite3.connect(cache_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "CREATE TABLE IF NOT EXISTS tiles (server_name text, zoom integer, x integer, y integer, data blob)"
+            )
+            conn.commit()
+            conn.close()
+            logger.info("Initialized map cache database schema manually")
+        except Exception as e:
+            logger.error(f"Failed to manually init cache DB: {e}")
+
+        if os.path.exists(cache_path):
+            logger.info(f"Existing cache size: {os.path.getsize(cache_path)} bytes")
+        else:
+            logger.info("Creating new map cache database")
+
+        self.map_widget = tkintermapview.TkinterMapView(
+            map_frame,
+            corner_radius=10,
+            use_database_only=False,
+            database_path=cache_path,
+        )
         self.map_widget.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+        # Set Google Maps as default
+        # Use HTTP and simplified URL to ensure consistent caching keys
+        self.map_widget.set_tile_server(
+            "http://mt1.google.com/vt/lyrs=m&hl=zh-TW&x={x}&y={y}&z={z}",
+            max_zoom=19,
+        )
+
+        # Occam's Razor Optimization: Increase Memory Cache
+        # Storing more tiles in RAM (defaults are often low) drastically reduces re-download/re-read from DB
+        try:
+            # tkintermapview usually stores the loader in 'canvas_tile_loader' or 'tile_loader'
+            loader = getattr(
+                self.map_widget,
+                "canvas_tile_loader",
+                getattr(self.map_widget, "tile_loader", None),
+            )
+            if loader:
+                # Common attribute name for cache size in various versions
+                if hasattr(loader, "storage_cache_max_size"):
+                    loader.storage_cache_max_size = 10000
+                    logger.info("Increased map memory cache size to 10,000 tiles")
+        except Exception as e:
+            logger.warning(f"Could not optimistically set memory cache: {e}")
 
         # Set default position (Taipei as fallback)
         self.map_widget.set_position(25.032192, 121.469360)
@@ -623,51 +682,10 @@ class iFakeGPSApp(ctk.CTk):
         # Bind click event
         self.map_widget.add_left_click_map_command(self._on_map_click)
 
-        # Map controls
+        # Map controls (Simplified as per user request)
+        # Search, Zoom, and Type selection removed.
         map_controls = ctk.CTkFrame(map_frame, fg_color="transparent")
-        map_controls.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
-
-        # Search entry
-        self.search_entry = ctk.CTkEntry(
-            map_controls, placeholder_text="Search location...", width=300
-        )
-        self.search_entry.pack(side="left", padx=(0, 10))
-        self.search_entry.bind("<Return>", self._search_location)
-
-        search_btn = ctk.CTkButton(
-            map_controls, text="🔍 Search", command=self._search_location, width=100
-        )
-        search_btn.pack(side="left", padx=(0, 20))
-
-        # Zoom controls
-        zoom_out_btn = ctk.CTkButton(
-            map_controls,
-            text="−",
-            command=lambda: self.map_widget.set_zoom(self.map_widget.zoom - 1),
-            width=40,
-            fg_color="#374151",
-            hover_color="#4b5563",
-        )
-        zoom_out_btn.pack(side="right", padx=2)
-
-        zoom_in_btn = ctk.CTkButton(
-            map_controls,
-            text="+",
-            command=lambda: self.map_widget.set_zoom(self.map_widget.zoom + 1),
-            width=40,
-            fg_color="#374151",
-            hover_color="#4b5563",
-        )
-        zoom_in_btn.pack(side="right", padx=2)
-
-        # Map type selector
-        map_type_menu = ctk.CTkOptionMenu(
-            map_controls,
-            values=["OpenStreetMap", "Google normal", "Google satellite"],
-            command=self._change_map_type,
-            width=150,
-        )
-        map_type_menu.pack(side="right", padx=10)
+        # map_controls.grid(row=1, column=0, padx=10, pady=10, sticky="ew") # Nothing to show currently
 
     def _set_default_location(self):
         """Try to set map position based on Windows Location API, with IP fallback."""
