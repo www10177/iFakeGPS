@@ -691,6 +691,52 @@ class DeviceManager:
             logger.error(f"Failed to enable developer mode: {e}")
             return False
 
+    def auto_mount_developer_disk_image(self, udid: str = None) -> bool:
+        """
+        Auto-mount Developer Disk Image using pymobiledevice3.
+        This is often required to make "Developer Mode" visible in Settings.
+        """
+        try:
+            from pymobiledevice3.lockdown import create_using_usbmux
+            from pymobiledevice3.services.mobile_image_mounter import auto_mount
+
+            target_udid = udid
+            if not target_udid and self.current_device:
+                target_udid = self.current_device.udid
+
+            if not target_udid:
+                # Try to find first connected device
+                from pymobiledevice3.usbmux import list_devices
+
+                devices = list_devices()
+                if devices:
+                    target_udid = devices[0].serial
+
+            if not target_udid:
+                return False
+
+            async def _run_async_mount():
+                async with create_using_usbmux(serial=target_udid) as lockdown:
+                    await auto_mount(lockdown)
+
+            # Run async function in a new event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(_run_async_mount())
+                return True
+            except Exception as e:
+                logger.warning(f"Auto-mount warning (may be already mounted): {e}")
+                # We consider it a success if it was already mounted or other non-critical errors
+                # But if it failed completely, we log it.
+                return True  # Proceed anyway as it might have worked
+            finally:
+                loop.close()
+
+        except Exception as e:
+            logger.error(f"Failed to run auto-mount: {e}")
+            return False
+
 
 class RouteWalker:
     """
@@ -1057,27 +1103,24 @@ class iFakeGPSApp(ctk.CTk):
             return
 
         def run_enable():
+            # 1. Trigger Auto Mount (to reveal the menu)
+            self.after(
+                0,
+                lambda: messagebox.showinfo(
+                    "Step 1/2", "Triggering Developer Menu...\nPlease wait..."
+                ),
+            )
+            self.device_manager.auto_mount_developer_disk_image()
+
+            # 2. Trigger Enable Command (to start the process on phone)
             success = self.device_manager.enable_developer_mode()
+
+            # 3. Show Guide immediately
+            self.after(0, self._show_dev_mode_guide)
+
             if success:
-                self.after(
-                    0,
-                    lambda: messagebox.showinfo(
-                        "Command Sent",
-                        "Command sent successfully.\n\n"
-                        "Please check your device for a restart prompt.\n"
-                        "After restart, remember to tap 'Turn On' and enter passcode.",
-                    ),
-                )
-                # Recheck after a delay
+                # Optionally verify check status later
                 self.after(10000, self._check_dev_mode)
-            else:
-                self.after(
-                    0,
-                    lambda: messagebox.showerror(
-                        "Error",
-                        "Failed to send enable command.\nCheck connection and try again.",
-                    ),
-                )
 
         threading.Thread(target=run_enable, daemon=True).start()
 
@@ -1116,16 +1159,7 @@ class iFakeGPSApp(ctk.CTk):
         )
         subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 10))
 
-        # Help Button
-        help_btn = ctk.CTkButton(
-            sidebar,
-            text="❓ 如何開啟開發者模式？\n(Enable Developer Mode)",
-            command=self._show_dev_mode_guide,
-            fg_color="#7c3aed",
-            hover_color="#6d28d9",
-            height=40,
-        )
-        help_btn.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="ew")
+        subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 10))
 
         # Developer Mode Status Section
         dev_mode_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
@@ -1168,7 +1202,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Device selection section
         device_frame = ctk.CTkFrame(sidebar)
-        device_frame.grid(row=3, column=0, padx=15, pady=10, sticky="ew")
+        device_frame.grid(row=4, column=0, padx=15, pady=10, sticky="ew")
 
         device_header = ctk.CTkFrame(device_frame, fg_color="transparent")
         device_header.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
@@ -1231,7 +1265,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Mode selection
         mode_frame = ctk.CTkFrame(sidebar)
-        mode_frame.grid(row=4, column=0, padx=15, pady=10, sticky="ew")
+        mode_frame.grid(row=5, column=0, padx=15, pady=10, sticky="ew")
 
         mode_label = ctk.CTkLabel(
             mode_frame, text="🎯 Mode", font=ctk.CTkFont(size=16, weight="bold")
@@ -1260,7 +1294,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Route controls
         self.route_frame = ctk.CTkFrame(sidebar)
-        self.route_frame.grid(row=5, column=0, padx=15, pady=10, sticky="ew")
+        self.route_frame.grid(row=6, column=0, padx=15, pady=10, sticky="ew")
 
         route_label = ctk.CTkLabel(
             self.route_frame,
