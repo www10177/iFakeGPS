@@ -51,7 +51,9 @@ uv run python -m PyInstaller ^
     --onefile ^
     --uac-admin ^
     --name "iFakeGPS" ^
+    --icon "app.ico" ^
     --add-data "docs;docs" ^
+    --add-data "app.ico;." ^
     --hidden-import=PIL ^
     --hidden-import=PIL._tkinter_finder ^
     --hidden-import=tkintermapview ^
