@@ -20,7 +20,7 @@ echo Starting iFakeGPS...
 echo.
 
 :: Activate venv and run the app
-call .venv\Scripts\activate.bat
-python ifakegps.py
+:: call .venv\Scripts\activate.bat
+uv run python ifakegps.py
 
 pause

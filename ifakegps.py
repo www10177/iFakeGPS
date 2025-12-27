@@ -145,6 +145,12 @@ class TunneldManager:
             )
             self._output_thread.start()
 
+            # Start stderr monitoring thread
+            self._stderr_thread = threading.Thread(
+                target=self._monitor_stderr, daemon=True
+            )
+            self._stderr_thread.start()
+
             # Wait a moment for tunneld to initialize
             time.sleep(2)
 
@@ -180,6 +186,20 @@ class TunneldManager:
         self.running = False
         if self.on_status_change:
             self.on_status_change(False)
+
+    def _monitor_stderr(self):
+        """Monitor tunneld stderr for errors."""
+        if not self.process:
+            return
+
+        try:
+            while self.process and self.process.poll() is None:
+                line = self.process.stderr.readline()
+                if line:
+                    decoded = line.decode("utf-8", errors="ignore").strip()
+                    logger.error(f"tunneld [ERR]: {decoded}")
+        except Exception as e:
+            logger.warning(f"tunneld stderr monitor error: {e}")
 
     def stop(self):
         """Stop the tunneld service."""
@@ -606,7 +626,70 @@ class DeviceManager:
                 self.service_provider = None
             self.connected = False
             self.current_device = None
+            self.connected = False
+            self.current_device = None
             logger.info("Disconnected from device")
+
+    def check_developer_mode(self, udid: str = None) -> Optional[bool]:
+        """
+        Check if Developer Mode is enabled on the device.
+        Returns True/False, or None if check failed.
+        """
+        try:
+            from pymobiledevice3.lockdown import create_using_usbmux
+
+            target_udid = udid
+            if not target_udid and self.current_device:
+                target_udid = self.current_device.udid
+
+            if not target_udid:
+                # Try to find first connected device to check
+                from pymobiledevice3.usbmux import list_devices
+
+                devices = list_devices()
+                if devices:
+                    target_udid = devices[0].serial
+
+            if not target_udid:
+                return None
+
+            with create_using_usbmux(serial=target_udid) as lockdown:
+                # developer_mode_status is a property of LockdownClient in newer pymobiledevice3
+                status = lockdown.developer_mode_status
+                logger.info(f"Developer Mode status for {target_udid}: {status}")
+                return status
+        except Exception as e:
+            logger.warning(f"Failed to check developer mode: {e}")
+            return None
+
+    def enable_developer_mode(self, udid: str = None) -> bool:
+        """Enable Developer Mode on the device using AmfiService."""
+        try:
+            from pymobiledevice3.lockdown import create_using_usbmux
+            from pymobiledevice3.services.amfi import AmfiService
+
+            target_udid = udid
+            if not target_udid and self.current_device:
+                target_udid = self.current_device.udid
+
+            if not target_udid:
+                # Try to find first connected device
+                from pymobiledevice3.usbmux import list_devices
+
+                devices = list_devices()
+                if devices:
+                    target_udid = devices[0].serial
+
+            if not target_udid:
+                return False
+
+            with create_using_usbmux(serial=target_udid) as lockdown:
+                amfi = AmfiService(lockdown)
+                amfi.enable_developer_mode()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to enable developer mode: {e}")
+            return False
 
 
 class RouteWalker:
@@ -937,6 +1020,67 @@ class iFakeGPSApp(ctk.CTk):
         )
         close_btn.pack(pady=(0, 20))
 
+    def _check_dev_mode(self):
+        """Check developer mode status."""
+        self.dev_status_indicator.configure(text="🔄 Checking...", text_color="orange")
+        self.update()  # Force update
+
+        def run_check():
+            status = self.device_manager.check_developer_mode()
+            self.after(0, lambda: self._update_dev_mode_ui(status))
+
+        threading.Thread(target=run_check, daemon=True).start()
+
+    def _update_dev_mode_ui(self, enabled: Optional[bool]):
+        """Update the Developer Mode UI based on status."""
+        if enabled is True:
+            self.dev_status_indicator.configure(text="🟢 Enabled", text_color="#22c55e")
+            self.dev_enable_btn.grid_remove()
+        elif enabled is False:
+            self.dev_status_indicator.configure(
+                text="🔴 Not Enabled", text_color="#ef4444"
+            )
+            self.dev_enable_btn.grid()
+        else:
+            self.dev_status_indicator.configure(text="⚪ Unknown", text_color="gray")
+            self.dev_enable_btn.grid_remove()
+
+    def _enable_dev_mode_flow(self):
+        """Trigger the flow to enable developer mode."""
+        if not messagebox.askyesno(
+            "Enable Developer Mode",
+            "This command will trigger 'Enable Developer Mode' on the connected device.\n\n"
+            "The device will need to RESTART.\n"
+            "After restart, unlock the device and tap 'Turn On' in the alert.\n\n"
+            "Do you want to proceed?",
+        ):
+            return
+
+        def run_enable():
+            success = self.device_manager.enable_developer_mode()
+            if success:
+                self.after(
+                    0,
+                    lambda: messagebox.showinfo(
+                        "Command Sent",
+                        "Command sent successfully.\n\n"
+                        "Please check your device for a restart prompt.\n"
+                        "After restart, remember to tap 'Turn On' and enter passcode.",
+                    ),
+                )
+                # Recheck after a delay
+                self.after(10000, self._check_dev_mode)
+            else:
+                self.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        "Error",
+                        "Failed to send enable command.\nCheck connection and try again.",
+                    ),
+                )
+
+        threading.Thread(target=run_enable, daemon=True).start()
+
     def _create_ui(self):
         """Create the main UI layout."""
         # Configure grid
@@ -982,6 +1126,45 @@ class iFakeGPSApp(ctk.CTk):
             height=40,
         )
         help_btn.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="ew")
+
+        # Developer Mode Status Section
+        dev_mode_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        dev_mode_frame.grid(row=3, column=0, padx=20, pady=(0, 15), sticky="ew")
+        dev_mode_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            dev_mode_frame, text="Dev Mode:", font=ctk.CTkFont(size=12, weight="bold")
+        ).grid(row=0, column=0, sticky="w")
+
+        self.dev_status_indicator = ctk.CTkLabel(
+            dev_mode_frame, text="⚪ Unknown", font=ctk.CTkFont(size=12)
+        )
+        self.dev_status_indicator.grid(row=0, column=1, sticky="e")
+
+        self.dev_check_btn = ctk.CTkButton(
+            dev_mode_frame,
+            text="Check Status",
+            width=80,
+            height=24,
+            font=ctk.CTkFont(size=11),
+            command=self._check_dev_mode,
+        )
+        self.dev_check_btn.grid(row=1, column=0, columnspan=2, pady=(5, 0), sticky="ew")
+
+        self.dev_enable_btn = ctk.CTkButton(
+            dev_mode_frame,
+            text="Enable Dev Mode",
+            width=80,
+            height=24,
+            fg_color="#ef4444",
+            hover_color="#dc2626",
+            font=ctk.CTkFont(size=11),
+            command=self._enable_dev_mode_flow,
+        )
+        self.dev_enable_btn.grid(
+            row=2, column=0, columnspan=2, pady=(5, 0), sticky="ew"
+        )
+        self.dev_enable_btn.grid_remove()  # Hidden by default
 
         # Device selection section
         device_frame = ctk.CTkFrame(sidebar)
@@ -1418,6 +1601,8 @@ class iFakeGPSApp(ctk.CTk):
         """Called when tunneld detects a new device connection."""
         # Refresh device list
         self.after(0, self._refresh_devices)
+        # Check dev mode
+        self.after(1000, self._check_dev_mode)
 
     def _on_tunneld_status_change(self, running: bool):
         """Called when tunneld status changes."""

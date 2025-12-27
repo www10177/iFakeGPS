@@ -47,7 +47,7 @@ echo [INFO] Generating PyInstaller spec file with UAC admin manifest...
 :: --icon: Use a custom icon if available
 :: --name: Name of the output executable
 
-uv run pyinstaller ^
+uv run python -m PyInstaller ^
     --onefile ^
     --uac-admin ^
     --name "iFakeGPS" ^
@@ -56,12 +56,28 @@ uv run pyinstaller ^
     --hidden-import=PIL._tkinter_finder ^
     --hidden-import=tkintermapview ^
     --hidden-import=customtkinter ^
+    --hidden-import=python_multipart ^
     --hidden-import=pymobiledevice3 ^
     --hidden-import=gpxpy ^
     --hidden-import=requests ^
     --hidden-import=zeroconf ^
+    --hidden-import=uvicorn ^
+    --hidden-import=fastapi ^
+    --hidden-import=starlette ^
+    --hidden-import=click ^
+    --hidden-import=h11 ^
+    --hidden-import=websockets ^
+    --collect-all uvicorn ^
+    --collect-all fastapi ^
+    --collect-all starlette ^
+    --collect-all pydantic ^
+    --collect-all pymobiledevice3 ^
+    --collect-all pytun_pmd3 ^
     --collect-all customtkinter ^
     --collect-all tkintermapview ^
+    --copy-metadata readchar ^
+    --copy-metadata inquirer3 ^
+    --copy-metadata pymobiledevice3 ^
     ifakegps.py
 
 if %errorLevel% neq 0 (
