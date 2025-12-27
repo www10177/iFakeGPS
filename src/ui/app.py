@@ -609,54 +609,26 @@ class iFakeGPSApp(ctk.CTk):
         map_frame.grid_columnconfigure(0, weight=1)
         map_frame.grid_rowconfigure(0, weight=1)
 
-        # Create map widget with explicit caching for better performance
-        # Use standard system cache directories (e.g., AppData/Local on Windows)
-        if os.name == "nt":
-            base_dir = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-            cache_dir = os.path.join(base_dir, "iFakeGPS")
-        else:
-            cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "iFakeGPS")
-
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_path = os.path.join(cache_dir, "map_cache.db")
-
-        # Manually initialize DB schema to fix 0-byte issue
-        try:
-            import sqlite3
-
-            conn = sqlite3.connect(cache_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                "CREATE TABLE IF NOT EXISTS tiles (server_name text, zoom integer, x integer, y integer, data blob)"
-            )
-            conn.commit()
-            conn.close()
-            logger.info("Initialized map cache database schema manually")
-        except Exception as e:
-            logger.error(f"Failed to manually init cache DB: {e}")
-
-        if os.path.exists(cache_path):
-            logger.info(f"Existing cache size: {os.path.getsize(cache_path)} bytes")
-        else:
-            logger.info("Creating new map cache database")
-
+        # Create map widget (Memory Only - Fast and Simple)
+        # We removed the SQLite DB cache due to compatibility issues with custom tile servers.
+        # Instead, we rely on a large in-memory cache.
         self.map_widget = tkintermapview.TkinterMapView(
             map_frame,
             corner_radius=10,
             use_database_only=False,
-            database_path=cache_path,
+            # database_path=None (Default)
         )
         self.map_widget.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
         # Set Google Maps as default
-        # Use HTTP and simplified URL to ensure consistent caching keys
+        # Use HTTPS to avoid potential 301 redirects
         self.map_widget.set_tile_server(
-            "http://mt1.google.com/vt/lyrs=m&hl=zh-TW&x={x}&y={y}&z={z}",
+            "https://mt1.google.com/vt/lyrs=m&hl=zh-TW&x={x}&y={y}&z={z}",
             max_zoom=19,
         )
 
         # Occam's Razor Optimization: Increase Memory Cache
-        # Storing more tiles in RAM (defaults are often low) drastically reduces re-download/re-read from DB
+        # Storing more tiles in RAM (defaults are often low) drastically reduces re-download
         try:
             # tkintermapview usually stores the loader in 'canvas_tile_loader' or 'tile_loader'
             loader = getattr(
@@ -665,12 +637,52 @@ class iFakeGPSApp(ctk.CTk):
                 getattr(self.map_widget, "tile_loader", None),
             )
             if loader:
-                # Common attribute name for cache size in various versions
+                # Maximize memory cache since we are not using DB
                 if hasattr(loader, "storage_cache_max_size"):
-                    loader.storage_cache_max_size = 10000
-                    logger.info("Increased map memory cache size to 10,000 tiles")
+                    loader.storage_cache_max_size = 20000  # Increased to 20k
+                    logger.info("Enabled Aggressive Memory Caching (20,000 tiles)")
         except Exception as e:
             logger.warning(f"Could not optimistically set memory cache: {e}")
+        # ----------------------------
+
+        # Occam's Razor Optimization: Increase Memory Cache
+
+        # Occam's Razor Optimization: Increase Memory Cache
+        # Storing more tiles in RAM (defaults are often low) drastically reduces re-download
+        try:
+            # tkintermapview usually stores the loader in 'canvas_tile_loader' or 'tile_loader'
+            loader = getattr(
+                self.map_widget,
+                "canvas_tile_loader",
+                getattr(self.map_widget, "tile_loader", None),
+            )
+            if loader:
+                # 1. Maximize memory cache
+                if hasattr(loader, "storage_cache_max_size"):
+                    loader.storage_cache_max_size = 20000
+                    logger.info("Enabled Aggressive Memory Caching (20,000 tiles)")
+
+                # 2. OVERRIDE: Inject Multithreading (Turbo Mode)
+                # The library uses a single thread to consume the request queue.
+                # We spin up multiple threads pointing to the SAME run method to parallelize downloads.
+                import threading
+
+                if hasattr(loader, "run") and callable(loader.run):
+                    # Default requests pool is 10, so 8-10 threads is optimal
+                    num_threads = 10
+                    logger.info(
+                        f"Injecting {num_threads} extra threads for Turbo parallel downloading..."
+                    )
+                    for i in range(num_threads):
+                        t = threading.Thread(
+                            target=loader.run, daemon=True, name=f"MapLoader-{i}"
+                        )
+                        t.start()
+                    logger.info(
+                        "Turbo Mode Engaged: Map loading should be blazing fast now."
+                    )
+        except Exception as e:
+            logger.warning(f"Could not enable Turbo Mode: {e}")
 
         # Set default position (Taipei as fallback)
         self.map_widget.set_position(25.032192, 121.469360)
