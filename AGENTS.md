@@ -24,6 +24,19 @@ This project uses `uv` for dependency management and execution.
     *   `pack.bat`: The build script to generate a standalone Windows executable.
     *   `pyproject.toml`: Project configuration and dependencies.
 
-4.  **Documentation**:
     *   Documentation is in `README.md` (Main English) and `docs/README_zh-TW.md`.
     *   Keep user-facing instructions simple.
+
+5.  **Tunneld & Packaging Knowledge (Crucial)**:
+    *   **Tunneld Components**: `tunneld` internally uses `fastapi`, `uvicorn`, `starlette`, `python-multipart`. These are "hidden imports" for PyInstaller and MUST be explicitly collected (`--hidden-import` and `--collect-all`).
+    *   **Metadata**: `tunneld` checks versions of `readchar`, `inquirer3`, and `pymobiledevice3` using `importlib.metadata`. PyInstaller strips this by default. You MUST use `--copy-metadata` for these packages.
+    *   **Drivers (DLLs)**: `pytun_pmd3` (used by `tunneld` for VPN creation) relies on `wintun.dll`. You MUST use `--collect-all pytun_pmd3` to bundle this DLL.
+    *   **Icon**: The app icon is generated via `process_icon.py` (center cropped square) to `app.ico`. `pack.bat` includes it with `--icon` and `--add-data`.
+
+6.  **Developer Mode Logic**:
+    *   The app now includes native Developer Mode management via `DeviceManager` class.
+    *   **Status Check**: Uses `AmfiService.developer_mode_status`.
+    *   **Enable Flow**:
+        1.  Triggers `pymobiledevice3 mounter auto-mount` (via `auto_mount_developer_disk_image` helper) - required to make the menu appear on some devices.
+        2.  Triggers `AmfiService.enable_developer_mode` - sends the command to the phone.
+        3.  Shows a localized guide UI to the user.

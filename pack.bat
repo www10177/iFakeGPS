@@ -80,7 +80,7 @@ uv run python -m PyInstaller ^
     --copy-metadata readchar ^
     --copy-metadata inquirer3 ^
     --copy-metadata pymobiledevice3 ^
-    ifakegps.py
+    src/main.py
 
 if %errorLevel% neq 0 (
     echo.

@@ -43,6 +43,11 @@ Click anywhere on the map to instantly teleport your device's GPS location.
 - Add speed noise for realistic movement
 - Loop mode for continuous walking
 
+### 🛠️ Developer Mode Management
+- **Automatic Status Check**: Instantly see if Developer Mode is enabled on your connected device.
+- **One-Click Enable**: Trigger the developer mode prompt on your device directly from the app.
+- **Auto-Mount**: Automatically handles the developer disk image mounting required for the menu to appear.
+
 ### � Location Search
 Search for any location by name and set it as your GPS position.
 
