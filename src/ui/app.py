@@ -334,12 +334,13 @@ class iFakeGPSApp(ctk.CTk):
         device_header.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
         device_header.grid_columnconfigure(0, weight=1)
 
-        device_label = ctk.CTkLabel(
+        # Store label ref for update
+        self.lbl_device_control = ctk.CTkLabel(
             device_header,
-            text="📱 Device Selection",
+            text="Device Selection",
             font=ctk.CTkFont(size=16, weight="bold"),
         )
-        device_label.grid(row=0, column=0, sticky="w")
+        self.lbl_device_control.grid(row=0, column=0, sticky="w")
 
         self.refresh_btn = ctk.CTkButton(
             device_header,
@@ -393,16 +394,15 @@ class iFakeGPSApp(ctk.CTk):
         mode_frame = ctk.CTkFrame(sidebar)
         mode_frame.grid(row=5, column=0, padx=15, pady=10, sticky="ew")
 
-        mode_label = ctk.CTkLabel(
+        ctk.CTkLabel(
             mode_frame, text="🎯 Mode", font=ctk.CTkFont(size=16, weight="bold")
-        )
-        mode_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+        ).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
 
         self.mode_var = ctk.StringVar(value="single")
 
         single_radio = ctk.CTkRadioButton(
             mode_frame,
-            text="Single Point (Click to teleport)",
+            text="Single Point",
             variable=self.mode_var,
             value="single",
             command=self._on_mode_change,
@@ -411,7 +411,7 @@ class iFakeGPSApp(ctk.CTk):
 
         route_radio = ctk.CTkRadioButton(
             mode_frame,
-            text="Route Mode (Click to add points)",
+            text="Route Mode",
             variable=self.mode_var,
             value="route",
             command=self._on_mode_change,
@@ -422,18 +422,18 @@ class iFakeGPSApp(ctk.CTk):
         self.route_frame = ctk.CTkFrame(sidebar)
         self.route_frame.grid(row=6, column=0, padx=15, pady=10, sticky="ew")
 
-        route_label = ctk.CTkLabel(
+        self.lbl_route = ctk.CTkLabel(
             self.route_frame,
-            text="🚶 Route Walking",
+            text="Route Walking",
             font=ctk.CTkFont(size=16, weight="bold"),
         )
-        route_label.grid(
+        self.lbl_route.grid(
             row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w"
         )
 
         # Speed slider
-        speed_label = ctk.CTkLabel(self.route_frame, text="Walking Speed:")
-        speed_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.lbl_speed = ctk.CTkLabel(self.route_frame, text="Walking Speed:")
+        self.lbl_speed.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
         self.speed_value_label = ctk.CTkLabel(self.route_frame, text="5.0 km/h")
         self.speed_value_label.grid(row=1, column=1, padx=10, pady=5, sticky="e")
@@ -451,8 +451,8 @@ class iFakeGPSApp(ctk.CTk):
         self.speed_slider.set(5)
 
         # Speed noise slider (randomness)
-        noise_label = ctk.CTkLabel(self.route_frame, text="Speed Noise:")
-        noise_label.grid(row=3, column=0, padx=10, pady=5, sticky="w")
+        self.lbl_noise = ctk.CTkLabel(self.route_frame, text="Speed Noise:")
+        self.lbl_noise.grid(row=3, column=0, padx=10, pady=5, sticky="w")
 
         self.noise_value_label = ctk.CTkLabel(self.route_frame, text="0%")
         self.noise_value_label.grid(row=3, column=1, padx=10, pady=5, sticky="e")
@@ -487,7 +487,8 @@ class iFakeGPSApp(ctk.CTk):
             row=6, column=0, columnspan=2, padx=10, pady=10, sticky="ew"
         )
 
-        self.start_walk_btn = ctk.CTkButton(
+        # Note: We need to assign these to self for update_ui_text
+        self.btn_start_walk = self.start_walk_btn = ctk.CTkButton(
             route_btn_frame,
             text="▶ Start",
             command=self._start_walking,
@@ -519,10 +520,10 @@ class iFakeGPSApp(ctk.CTk):
 
         # Loop checkbox
         self.loop_var = ctk.BooleanVar(value=False)
-        loop_check = ctk.CTkCheckBox(
+        self.chk_loop = ctk.CTkCheckBox(
             self.route_frame, text="Loop route continuously", variable=self.loop_var
         )
-        loop_check.grid(
+        self.chk_loop.grid(
             row=7, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w"
         )
 
@@ -542,37 +543,37 @@ class iFakeGPSApp(ctk.CTk):
         coord_frame = ctk.CTkFrame(sidebar)
         coord_frame.grid(row=7, column=0, padx=15, pady=10, sticky="ew")
 
-        coord_label = ctk.CTkLabel(
+        self.lbl_manual = ctk.CTkLabel(
             coord_frame,
             text="📍 Manual Coordinates",
             font=ctk.CTkFont(size=16, weight="bold"),
         )
-        coord_label.grid(
+        self.lbl_manual.grid(
             row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w"
         )
 
-        lat_label = ctk.CTkLabel(coord_frame, text="Latitude:")
-        lat_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.lbl_lat = ctk.CTkLabel(coord_frame, text="Latitude:")
+        self.lbl_lat.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
         self.lat_entry = ctk.CTkEntry(coord_frame, placeholder_text="37.7749")
         self.lat_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
 
-        lon_label = ctk.CTkLabel(coord_frame, text="Longitude:")
-        lon_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.lbl_lon = ctk.CTkLabel(coord_frame, text="Longitude:")
+        self.lbl_lon.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
         self.lon_entry = ctk.CTkEntry(coord_frame, placeholder_text="-122.4194")
         self.lon_entry.grid(row=2, column=1, padx=10, pady=5, sticky="ew")
 
         coord_frame.grid_columnconfigure(1, weight=1)
 
-        self.set_location_btn = ctk.CTkButton(
+        self.btn_teleport = ctk.CTkButton(
             coord_frame,
-            text="📍 Set Location",
+            text="✈ Teleport",
             command=self._set_manual_location,
             fg_color="#8b5cf6",
             hover_color="#7c3aed",
         )
-        self.set_location_btn.grid(
+        self.btn_teleport.grid(
             row=3, column=0, columnspan=2, padx=10, pady=10, sticky="ew"
         )
 
@@ -626,24 +627,6 @@ class iFakeGPSApp(ctk.CTk):
             "https://mt1.google.com/vt/lyrs=m&hl=zh-TW&x={x}&y={y}&z={z}",
             max_zoom=19,
         )
-
-        # Occam's Razor Optimization: Increase Memory Cache
-        # Storing more tiles in RAM (defaults are often low) drastically reduces re-download
-        try:
-            # tkintermapview usually stores the loader in 'canvas_tile_loader' or 'tile_loader'
-            loader = getattr(
-                self.map_widget,
-                "canvas_tile_loader",
-                getattr(self.map_widget, "tile_loader", None),
-            )
-            if loader:
-                # Maximize memory cache since we are not using DB
-                if hasattr(loader, "storage_cache_max_size"):
-                    loader.storage_cache_max_size = 20000  # Increased to 20k
-                    logger.info("Enabled Aggressive Memory Caching (20,000 tiles)")
-        except Exception as e:
-            logger.warning(f"Could not optimistically set memory cache: {e}")
-        # ----------------------------
 
         # Occam's Razor Optimization: Increase Memory Cache
 
