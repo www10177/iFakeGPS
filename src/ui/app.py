@@ -267,6 +267,9 @@ class iFakeGPSApp(ctk.CTk):
         # Create bottom status bar
         self._create_status_bar()
 
+        # Set initial visibility after all components are created
+        self._on_mode_change()
+
     def _create_sidebar(self):
         """Create the left sidebar with controls."""
         sidebar = ctk.CTkFrame(self, width=350, corner_radius=0)
@@ -540,11 +543,11 @@ class iFakeGPSApp(ctk.CTk):
         )
 
         # Coordinates section
-        coord_frame = ctk.CTkFrame(sidebar)
-        coord_frame.grid(row=7, column=0, padx=15, pady=10, sticky="ew")
+        self.coord_frame = ctk.CTkFrame(sidebar)
+        self.coord_frame.grid(row=7, column=0, padx=15, pady=10, sticky="ew")
 
         self.lbl_manual = ctk.CTkLabel(
-            coord_frame,
+            self.coord_frame,
             text="📍 Manual Coordinates",
             font=ctk.CTkFont(size=16, weight="bold"),
         )
@@ -552,22 +555,22 @@ class iFakeGPSApp(ctk.CTk):
             row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w"
         )
 
-        self.lbl_lat = ctk.CTkLabel(coord_frame, text="Latitude:")
+        self.lbl_lat = ctk.CTkLabel(self.coord_frame, text="Latitude:")
         self.lbl_lat.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
-        self.lat_entry = ctk.CTkEntry(coord_frame, placeholder_text="37.7749")
+        self.lat_entry = ctk.CTkEntry(self.coord_frame, placeholder_text="37.7749")
         self.lat_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
 
-        self.lbl_lon = ctk.CTkLabel(coord_frame, text="Longitude:")
+        self.lbl_lon = ctk.CTkLabel(self.coord_frame, text="Longitude:")
         self.lbl_lon.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
-        self.lon_entry = ctk.CTkEntry(coord_frame, placeholder_text="-122.4194")
+        self.lon_entry = ctk.CTkEntry(self.coord_frame, placeholder_text="-122.4194")
         self.lon_entry.grid(row=2, column=1, padx=10, pady=5, sticky="ew")
 
-        coord_frame.grid_columnconfigure(1, weight=1)
+        self.coord_frame.grid_columnconfigure(1, weight=1)
 
         self.btn_teleport = ctk.CTkButton(
-            coord_frame,
+            self.coord_frame,
             text="✈ Teleport",
             command=self._set_manual_location,
             fg_color="#8b5cf6",
@@ -579,7 +582,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Clear location button
         self.clear_location_btn = ctk.CTkButton(
-            coord_frame,
+            self.coord_frame,
             text="🔄 Clear Simulated Location",
             command=self._clear_location,
             fg_color="#6b7280",
@@ -955,10 +958,18 @@ class iFakeGPSApp(ctk.CTk):
         )
 
         if self.mode == AppMode.SINGLE_POINT:
+            if hasattr(self, "route_frame"):
+                self.route_frame.grid_remove()
+            if hasattr(self, "coord_frame"):
+                self.coord_frame.grid()
             self.status_label.configure(
                 text="Single Point Mode: Click on the map to teleport to that location."
             )
         else:
+            if hasattr(self, "coord_frame"):
+                self.coord_frame.grid_remove()
+            if hasattr(self, "route_frame"):
+                self.route_frame.grid()
             self.status_label.configure(
                 text="Route Mode: Click on the map to add waypoints for walking."
             )
