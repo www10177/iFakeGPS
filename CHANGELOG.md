@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-03-07
+
+### Added
+- **i18n Support**: Full internationalization with English and Traditional Chinese, including auto-detection of the OS language.
+- **Map Tile Caching**: Added local SQLite-based tile caching (`CachingTileMapView`) to drastically reduce map loading times and bandwidth.
+- **Interactive Tooltips**: Added instant-hover tooltips for complex UI parameters like speed and noise.
+- **Route Controls**: Added the ability to `Pause` and `Resume` a simulated route walk.
+- **Advanced Speed Control**: Upgraded the speed slider to support a wider range (0 to 1000 km/h) and bidirectional text entry.
+
+### Fixed
+- **Tooltip Crash**: Fixed a CTkLabel background color crash that occurred when rendering tooltips in CustomTkinter.
+
 ## [1.1.0] - 2026-03-06
 
 ### Added

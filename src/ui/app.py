@@ -7,12 +7,14 @@ from tkinter import messagebox
 from typing import List, Optional, Tuple
 
 import customtkinter as ctk
-import tkintermapview
 
 from src.core.device_manager import DeviceManager
 from src.core.models import DeviceInfo, RoutePoint
 from src.core.route_walker import RouteWalker
 from src.core.tunnel_manager import TunneldManager
+from src.ui.caching_map_view import CachingTileMapView
+from src.ui.i18n import LANGUAGES, get_lang, set_lang, t
+from src.ui.tooltip import add_tooltip_button
 from src.utils.logger import logger
 
 
@@ -30,7 +32,7 @@ class iFakeGPSApp(ctk.CTk):
         super().__init__()
 
         # Configure window
-        self.title("iFakeGPS - iOS Location Simulator")
+        self.title(t("app_title"))
         self.geometry("1400x900")
         self.minsize(1200, 700)
 
@@ -88,7 +90,7 @@ class iFakeGPSApp(ctk.CTk):
     def _show_dev_mode_guide(self):
         """Show the Developer Mode guide window."""
         guide = ctk.CTkToplevel(self)
-        guide.title("如何開啟開發者模式 (How to Enable Developer Mode)")
+        guide.title(t("guide_title"))
         guide.geometry("500x700")
 
         # Make modal
@@ -101,49 +103,31 @@ class iFakeGPSApp(ctk.CTk):
 
         title = ctk.CTkLabel(
             scroll,
-            text="📱 開啟 iOS 開發者模式\n(Enable Developer Mode)",
+            text=t("guide_heading"),
             font=ctk.CTkFont(size=20, weight="bold"),
         )
         title.pack(pady=(10, 20))
 
         steps = [
-            (
-                "1. 進入設定 (Settings)",
-                "進入 iPhone/iPad 的「設定」。\nGo to Settings.",
-            ),
-            (
-                "2. 隱私權與安全性 (Privacy)",
-                "點選「隱私權與安全性」。\nTap 'Privacy & Security'.",
-            ),
-            (
-                "3. 開發者模式 (Developer Mode)",
-                "滑動到最底部，找到「開發者模式」。\nScroll to bottom, find 'Developer Mode'.",
-            ),
-            (
-                "4. 開啟開關 (Turn On)",
-                "進入並將開關打開。系統會要求重新啟動。\nTurn it on. Device will restart.",
-            ),
-            (
-                "5. 確認開啟 (Confirm)",
-                "重啟後解鎖，點選「開啟」並輸入密碼。\nUnlock and tap 'Turn On'.",
-            ),
-            (
-                "6. 連接電腦 (Connect)",
-                "使用 USB 連接電腦，並點選「信任」。\nConnect via USB and tap 'Trust'.",
-            ),
+            (t("guide_step1_title"), t("guide_step1_desc")),
+            (t("guide_step2_title"), t("guide_step2_desc")),
+            (t("guide_step3_title"), t("guide_step3_desc")),
+            (t("guide_step4_title"), t("guide_step4_desc")),
+            (t("guide_step5_title"), t("guide_step5_desc")),
+            (t("guide_step6_title"), t("guide_step6_desc")),
         ]
 
         for step_title, step_desc in steps:
             step_frame = ctk.CTkFrame(scroll, fg_color="transparent")
             step_frame.pack(fill="x", pady=10)
 
-            t = ctk.CTkLabel(
+            title_lbl = ctk.CTkLabel(
                 step_frame,
                 text=step_title,
                 font=ctk.CTkFont(size=16, weight="bold"),
                 anchor="w",
             )
-            t.pack(fill="x")
+            title_lbl.pack(fill="x")
 
             d = ctk.CTkLabel(
                 step_frame,
@@ -181,13 +165,13 @@ class iFakeGPSApp(ctk.CTk):
                 messagebox.showerror("Error", f"Cannot open manual: {e}")
 
         manual_btn = ctk.CTkButton(
-            scroll, text="📖 打開完整說明書 (Open Manual)", command=open_manual
+            scroll, text=t("guide_btn_manual"), command=open_manual
         )
         manual_btn.pack(pady=20)
 
         close_btn = ctk.CTkButton(
             scroll,
-            text="我知道了 (Got it)",
+            text=t("guide_btn_close"),
             command=guide.destroy,
             fg_color="transparent",
             border_width=1,
@@ -208,25 +192,26 @@ class iFakeGPSApp(ctk.CTk):
     def _update_dev_mode_ui(self, enabled: Optional[bool]):
         """Update the Developer Mode UI based on status."""
         if enabled is True:
-            self.dev_status_indicator.configure(text="🟢 Enabled", text_color="#22c55e")
+            self.dev_status_indicator.configure(
+                text=t("dev_status_enabled"), text_color="#22c55e"
+            )
             self.dev_enable_btn.grid_remove()
         elif enabled is False:
             self.dev_status_indicator.configure(
-                text="🔴 Not Enabled", text_color="#ef4444"
+                text=t("dev_status_disabled"), text_color="#ef4444"
             )
             self.dev_enable_btn.grid()
         else:
-            self.dev_status_indicator.configure(text="⚪ Unknown", text_color="gray")
+            self.dev_status_indicator.configure(
+                text=t("dev_status_unknown"), text_color="gray"
+            )
             self.dev_enable_btn.grid_remove()
 
     def _enable_dev_mode_flow(self):
         """Trigger the flow to enable developer mode."""
         if not messagebox.askyesno(
-            "Enable Developer Mode",
-            "This command will trigger 'Enable Developer Mode' on the connected device.\n\n"
-            "The device will need to RESTART.\n"
-            "After restart, unlock the device and tap 'Turn On' in the alert.\n\n"
-            "Do you want to proceed?",
+            t("dialog_enable_dev_title"),
+            t("dialog_enable_dev_msg"),
         ):
             return
 
@@ -278,13 +263,13 @@ class iFakeGPSApp(ctk.CTk):
 
         # App title
         title_label = ctk.CTkLabel(
-            sidebar, text="📍 iFakeGPS", font=ctk.CTkFont(size=28, weight="bold")
+            sidebar, text=t("sidebar_title"), font=ctk.CTkFont(size=28, weight="bold")
         )
         title_label.grid(row=0, column=0, padx=20, pady=(20, 5))
 
         subtitle_label = ctk.CTkLabel(
             sidebar,
-            text="iOS 17+ Location Simulator",
+            text=t("sidebar_subtitle"),
             font=ctk.CTkFont(size=14),
             text_color="gray",
         )
@@ -296,17 +281,19 @@ class iFakeGPSApp(ctk.CTk):
         dev_mode_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            dev_mode_frame, text="Dev Mode:", font=ctk.CTkFont(size=12, weight="bold")
+            dev_mode_frame,
+            text=t("dev_mode_label"),
+            font=ctk.CTkFont(size=12, weight="bold"),
         ).grid(row=0, column=0, sticky="w")
 
         self.dev_status_indicator = ctk.CTkLabel(
-            dev_mode_frame, text="⚪ Unknown", font=ctk.CTkFont(size=12)
+            dev_mode_frame, text=t("dev_status_unknown"), font=ctk.CTkFont(size=12)
         )
         self.dev_status_indicator.grid(row=0, column=1, sticky="e")
 
         self.dev_check_btn = ctk.CTkButton(
             dev_mode_frame,
-            text="Check Status",
+            text=t("dev_check_btn"),
             width=80,
             height=24,
             font=ctk.CTkFont(size=11),
@@ -316,7 +303,7 @@ class iFakeGPSApp(ctk.CTk):
 
         self.dev_enable_btn = ctk.CTkButton(
             dev_mode_frame,
-            text="Enable Dev Mode",
+            text=t("dev_enable_btn"),
             width=80,
             height=24,
             fg_color="#ef4444",
@@ -340,7 +327,7 @@ class iFakeGPSApp(ctk.CTk):
         # Store label ref for update
         self.lbl_device_control = ctk.CTkLabel(
             device_header,
-            text="Device Selection",
+            text=t("device_selection"),
             font=ctk.CTkFont(size=16, weight="bold"),
         )
         self.lbl_device_control.grid(row=0, column=0, sticky="w")
@@ -366,7 +353,7 @@ class iFakeGPSApp(ctk.CTk):
         # Placeholder for no devices
         self.no_devices_label = ctk.CTkLabel(
             self.device_listbox_frame,
-            text="No devices found.\nStart tunneld first:\npymobiledevice3 remote tunneld",
+            text=t("no_devices"),
             font=ctk.CTkFont(size=12),
             text_color="gray",
             justify="center",
@@ -376,7 +363,7 @@ class iFakeGPSApp(ctk.CTk):
         # Connection status
         self.conn_status = ctk.CTkLabel(
             device_frame,
-            text="⭕ Not Connected",
+            text=t("conn_not_connected"),
             font=ctk.CTkFont(size=12),
             text_color="#ef4444",
         )
@@ -385,7 +372,7 @@ class iFakeGPSApp(ctk.CTk):
         # Disconnect button
         self.disconnect_btn = ctk.CTkButton(
             device_frame,
-            text="Disconnect",
+            text=t("btn_disconnect"),
             command=self._disconnect_device,
             fg_color="#6b7280",
             hover_color="#4b5563",
@@ -398,14 +385,14 @@ class iFakeGPSApp(ctk.CTk):
         mode_frame.grid(row=5, column=0, padx=15, pady=10, sticky="ew")
 
         ctk.CTkLabel(
-            mode_frame, text="🎯 Mode", font=ctk.CTkFont(size=16, weight="bold")
+            mode_frame, text=t("mode_label"), font=ctk.CTkFont(size=16, weight="bold")
         ).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
 
         self.mode_var = ctk.StringVar(value="single")
 
         single_radio = ctk.CTkRadioButton(
             mode_frame,
-            text="Single Point",
+            text=t("mode_single"),
             variable=self.mode_var,
             value="single",
             command=self._on_mode_change,
@@ -414,7 +401,7 @@ class iFakeGPSApp(ctk.CTk):
 
         route_radio = ctk.CTkRadioButton(
             mode_frame,
-            text="Route Mode",
+            text=t("mode_route"),
             variable=self.mode_var,
             value="route",
             command=self._on_mode_change,
@@ -427,35 +414,68 @@ class iFakeGPSApp(ctk.CTk):
 
         self.lbl_route = ctk.CTkLabel(
             self.route_frame,
-            text="Route Walking",
+            text=t("route_walking"),
             font=ctk.CTkFont(size=16, weight="bold"),
         )
         self.lbl_route.grid(
             row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w"
         )
 
-        # Speed slider
-        self.lbl_speed = ctk.CTkLabel(self.route_frame, text="Walking Speed:")
-        self.lbl_speed.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        # Speed slider — label row with tooltip icon
+        speed_label_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
+        speed_label_frame.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
-        self.speed_value_label = ctk.CTkLabel(self.route_frame, text="5.0 km/h")
-        self.speed_value_label.grid(row=1, column=1, padx=10, pady=5, sticky="e")
+        self.lbl_speed = ctk.CTkLabel(speed_label_frame, text=t("speed_label"))
+        self.lbl_speed.pack(side="left")
+
+        self._speed_tip_icon = add_tooltip_button(
+            speed_label_frame, text=t("tip_speed")
+        )
+        self._speed_tip_icon.pack(side="left", padx=(2, 0))
+
+        speed_val_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
+        speed_val_frame.grid(row=1, column=1, padx=10, pady=5, sticky="e")
+
+        self.speed_entry_var = ctk.StringVar(value="5.0")
+        self.speed_entry = ctk.CTkEntry(
+            speed_val_frame,
+            textvariable=self.speed_entry_var,
+            width=50,
+            height=24,
+            font=ctk.CTkFont(size=12),
+            justify="right",
+        )
+        self.speed_entry.pack(side="left", padx=(0, 5))
+        self.speed_entry.bind("<Return>", self._on_speed_entry_change)
+        self.speed_entry.bind("<FocusOut>", self._on_speed_entry_change)
+
+        ctk.CTkLabel(speed_val_frame, text="km/h", font=ctk.CTkFont(size=12)).pack(
+            side="left"
+        )
 
         self.speed_slider = ctk.CTkSlider(
             self.route_frame,
-            from_=1,
-            to=50,
-            number_of_steps=49,
-            command=self._on_speed_change,
+            from_=0,
+            to=1000,
+            number_of_steps=1000,
+            command=self._on_speed_slider_change,
         )
         self.speed_slider.grid(
             row=2, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
         )
         self.speed_slider.set(5)
 
-        # Speed noise slider (randomness)
-        self.lbl_noise = ctk.CTkLabel(self.route_frame, text="Speed Noise:")
-        self.lbl_noise.grid(row=3, column=0, padx=10, pady=5, sticky="w")
+        # Speed noise slider — label row with tooltip icon
+        noise_label_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
+        noise_label_frame.grid(row=3, column=0, padx=10, pady=5, sticky="w")
+
+        self.lbl_noise = ctk.CTkLabel(noise_label_frame, text=t("noise_label"))
+        self.lbl_noise.pack(side="left")
+
+        self._noise_tip_icon = add_tooltip_button(
+            noise_label_frame, text=t("tip_noise")
+        )
+        self._noise_tip_icon.pack(side="left", padx=(2, 0))
 
         self.noise_value_label = ctk.CTkLabel(self.route_frame, text="0%")
         self.noise_value_label.grid(row=3, column=1, padx=10, pady=5, sticky="e")
@@ -493,7 +513,7 @@ class iFakeGPSApp(ctk.CTk):
         # Note: We need to assign these to self for update_ui_text
         self.btn_start_walk = self.start_walk_btn = ctk.CTkButton(
             route_btn_frame,
-            text="▶ Start",
+            text=t("btn_start"),
             command=self._start_walking,
             fg_color="#10b981",
             hover_color="#059669",
@@ -503,7 +523,7 @@ class iFakeGPSApp(ctk.CTk):
 
         self.pause_walk_btn = ctk.CTkButton(
             route_btn_frame,
-            text="⏸ Pause",
+            text=t("btn_pause"),
             command=self._pause_walking,
             fg_color="#f59e0b",
             hover_color="#d97706",
@@ -513,7 +533,7 @@ class iFakeGPSApp(ctk.CTk):
 
         self.stop_walk_btn = ctk.CTkButton(
             route_btn_frame,
-            text="⏹ Stop",
+            text=t("btn_stop"),
             command=self._stop_walking,
             fg_color="#ef4444",
             hover_color="#dc2626",
@@ -524,7 +544,7 @@ class iFakeGPSApp(ctk.CTk):
         # Loop checkbox
         self.loop_var = ctk.BooleanVar(value=False)
         self.chk_loop = ctk.CTkCheckBox(
-            self.route_frame, text="Loop route continuously", variable=self.loop_var
+            self.route_frame, text=t("chk_loop"), variable=self.loop_var
         )
         self.chk_loop.grid(
             row=7, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w"
@@ -533,7 +553,7 @@ class iFakeGPSApp(ctk.CTk):
         # Clear route button
         self.clear_route_btn = ctk.CTkButton(
             self.route_frame,
-            text="🗑 Clear Route",
+            text=t("btn_clear_route"),
             command=self._clear_route,
             fg_color="#6b7280",
             hover_color="#4b5563",
@@ -548,20 +568,20 @@ class iFakeGPSApp(ctk.CTk):
 
         self.lbl_manual = ctk.CTkLabel(
             self.coord_frame,
-            text="📍 Manual Coordinates",
+            text=t("manual_coords"),
             font=ctk.CTkFont(size=16, weight="bold"),
         )
         self.lbl_manual.grid(
             row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w"
         )
 
-        self.lbl_lat = ctk.CTkLabel(self.coord_frame, text="Latitude:")
+        self.lbl_lat = ctk.CTkLabel(self.coord_frame, text=t("label_lat"))
         self.lbl_lat.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
         self.lat_entry = ctk.CTkEntry(self.coord_frame, placeholder_text="37.7749")
         self.lat_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
 
-        self.lbl_lon = ctk.CTkLabel(self.coord_frame, text="Longitude:")
+        self.lbl_lon = ctk.CTkLabel(self.coord_frame, text=t("label_lon"))
         self.lbl_lon.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
         self.lon_entry = ctk.CTkEntry(self.coord_frame, placeholder_text="-122.4194")
@@ -571,7 +591,7 @@ class iFakeGPSApp(ctk.CTk):
 
         self.btn_teleport = ctk.CTkButton(
             self.coord_frame,
-            text="✈ Teleport",
+            text=t("btn_teleport"),
             command=self._set_manual_location,
             fg_color="#8b5cf6",
             hover_color="#7c3aed",
@@ -583,7 +603,7 @@ class iFakeGPSApp(ctk.CTk):
         # Clear location button
         self.clear_location_btn = ctk.CTkButton(
             self.coord_frame,
-            text="🔄 Clear Simulated Location",
+            text=t("btn_clear_location"),
             command=self._clear_location,
             fg_color="#6b7280",
             hover_color="#4b5563",
@@ -599,12 +619,39 @@ class iFakeGPSApp(ctk.CTk):
         # Info label at bottom
         info_label = ctk.CTkLabel(
             sidebar,
-            text="💡 Start tunneld first (as admin):\npymobiledevice3 remote tunneld",
+            text=t("info_tunneld"),
             font=ctk.CTkFont(size=11),
             text_color="gray",
             justify="left",
         )
-        info_label.grid(row=11, column=0, padx=15, pady=(5, 15), sticky="sw")
+        self.info_label = info_label
+        info_label.grid(row=11, column=0, padx=15, pady=(5, 5), sticky="sw")
+
+        # Language selector
+        lang_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        lang_frame.grid(row=12, column=0, padx=15, pady=(0, 15), sticky="sw")
+
+        self.lang_label = ctk.CTkLabel(
+            lang_frame, text=t("lang_label"), font=ctk.CTkFont(size=11)
+        )
+        self.lang_label.pack(side="left")
+
+        # Build display-name list and find current selection
+        lang_names = list(LANGUAGES.keys())
+        current_name = next(
+            (name for name, code in LANGUAGES.items() if code == get_lang()),
+            lang_names[0],
+        )
+        self.lang_combo = ctk.CTkOptionMenu(
+            lang_frame,
+            values=lang_names,
+            command=self._on_lang_change,
+            width=100,
+            height=24,
+            font=ctk.CTkFont(size=11),
+        )
+        self.lang_combo.set(current_name)
+        self.lang_combo.pack(side="left", padx=(5, 0))
 
     def _create_map_area(self):
         """Create the main map area."""
@@ -613,62 +660,30 @@ class iFakeGPSApp(ctk.CTk):
         map_frame.grid_columnconfigure(0, weight=1)
         map_frame.grid_rowconfigure(0, weight=1)
 
-        # Create map widget (Memory Only - Fast and Simple)
-        # We removed the SQLite DB cache due to compatibility issues with custom tile servers.
-        # Instead, we rely on a large in-memory cache.
-        self.map_widget = tkintermapview.TkinterMapView(
+        # Set up a dedicated directory in the user's AppData for database caching
+        import os
+
+        local_app_data = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        cache_dir = os.path.join(local_app_data, "iFakeGPS", "cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        db_path = os.path.join(cache_dir, "map_cache.db")
+
+        # Create map widget using write-through caching subclass.
+        # Tiles downloaded from the network are automatically saved to the local SQLite DB
+        # so subsequent launches load them instantly without re-downloading.
+        self.map_widget = CachingTileMapView(
             map_frame,
             corner_radius=10,
             use_database_only=False,
-            # database_path=None (Default)
+            db_path=db_path,
         )
         self.map_widget.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        # Set Google Maps as default
-        # Use HTTPS to avoid potential 301 redirects
+        # Set Google Maps as default tile server
         self.map_widget.set_tile_server(
             "https://mt1.google.com/vt/lyrs=m&hl=zh-TW&x={x}&y={y}&z={z}",
             max_zoom=19,
         )
-
-        # Occam's Razor Optimization: Increase Memory Cache
-
-        # Occam's Razor Optimization: Increase Memory Cache
-        # Storing more tiles in RAM (defaults are often low) drastically reduces re-download
-        try:
-            # tkintermapview usually stores the loader in 'canvas_tile_loader' or 'tile_loader'
-            loader = getattr(
-                self.map_widget,
-                "canvas_tile_loader",
-                getattr(self.map_widget, "tile_loader", None),
-            )
-            if loader:
-                # 1. Maximize memory cache
-                if hasattr(loader, "storage_cache_max_size"):
-                    loader.storage_cache_max_size = 20000
-                    logger.info("Enabled Aggressive Memory Caching (20,000 tiles)")
-
-                # 2. OVERRIDE: Inject Multithreading (Turbo Mode)
-                # The library uses a single thread to consume the request queue.
-                # We spin up multiple threads pointing to the SAME run method to parallelize downloads.
-                import threading
-
-                if hasattr(loader, "run") and callable(loader.run):
-                    # Default requests pool is 10, so 8-10 threads is optimal
-                    num_threads = 10
-                    logger.info(
-                        f"Injecting {num_threads} extra threads for Turbo parallel downloading..."
-                    )
-                    for i in range(num_threads):
-                        t = threading.Thread(
-                            target=loader.run, daemon=True, name=f"MapLoader-{i}"
-                        )
-                        t.start()
-                    logger.info(
-                        "Turbo Mode Engaged: Map loading should be blazing fast now."
-                    )
-        except Exception as e:
-            logger.warning(f"Could not enable Turbo Mode: {e}")
 
         # Set default position (Taipei as fallback)
         self.map_widget.set_position(25.032192, 121.469360)
@@ -739,7 +754,7 @@ class iFakeGPSApp(ctk.CTk):
 
         self.status_label = ctk.CTkLabel(
             status_frame,
-            text="Ready. Click on the map to set location or add route points.",
+            text=t("status_ready"),
             font=ctk.CTkFont(size=12),
         )
         self.status_label.pack(side="left", padx=15, pady=10)
@@ -752,9 +767,97 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.coords_label.pack(side="right", padx=15, pady=10)
 
+    # ------------------------------------------------------------------
+    # Language switching
+    # ------------------------------------------------------------------
+
+    def _on_lang_change(self, display_name: str):
+        """Called when the user picks a language from the dropdown."""
+        code = LANGUAGES.get(display_name, "en")
+        if code == get_lang():
+            return
+        set_lang(code)
+        self._update_ui_text()
+
+    def _update_ui_text(self):
+        """Refresh all visible widget text to reflect the current language."""
+        # Window title
+        self.title(t("app_title"))
+
+        # Sidebar labels
+        if hasattr(self, "lbl_device_control"):
+            self.lbl_device_control.configure(text=t("device_selection"))
+        if hasattr(self, "conn_status"):
+            # Only update if currently showing the default "Not Connected" state
+            if not self.device_manager.connected:
+                self.conn_status.configure(text=t("conn_not_connected"))
+        if hasattr(self, "disconnect_btn"):
+            self.disconnect_btn.configure(text=t("btn_disconnect"))
+        if hasattr(self, "dev_check_btn"):
+            self.dev_check_btn.configure(text=t("dev_check_btn"))
+        if hasattr(self, "dev_enable_btn"):
+            self.dev_enable_btn.configure(text=t("dev_enable_btn"))
+
+        # Mode
+        # Note: radio buttons keep internal values but we update display text
+        # This is tricky with CTkRadioButton — we'd need to recreate them.
+        # For now, static labels that we CAN update:
+        if hasattr(self, "lbl_route"):
+            self.lbl_route.configure(text=t("route_walking"))
+        if hasattr(self, "lbl_speed"):
+            self.lbl_speed.configure(text=t("speed_label"))
+        if hasattr(self, "lbl_noise"):
+            self.lbl_noise.configure(text=t("noise_label"))
+
+        # Tooltip icons — update their ToolTip text
+        if hasattr(self, "_speed_tip_icon"):
+            from src.ui.tooltip import ToolTip
+
+            ToolTip(self._speed_tip_icon, text=t("tip_speed"))
+        if hasattr(self, "_noise_tip_icon"):
+            from src.ui.tooltip import ToolTip
+
+            ToolTip(self._noise_tip_icon, text=t("tip_noise"))
+
+        # Route buttons
+        if hasattr(self, "start_walk_btn"):
+            self.start_walk_btn.configure(text=t("btn_start"))
+        if hasattr(self, "pause_walk_btn"):
+            self.pause_walk_btn.configure(text=t("btn_pause"))
+        if hasattr(self, "stop_walk_btn"):
+            self.stop_walk_btn.configure(text=t("btn_stop"))
+        if hasattr(self, "chk_loop"):
+            self.chk_loop.configure(text=t("chk_loop"))
+        if hasattr(self, "clear_route_btn"):
+            self.clear_route_btn.configure(text=t("btn_clear_route"))
+
+        # Manual coords
+        if hasattr(self, "lbl_manual"):
+            self.lbl_manual.configure(text=t("manual_coords"))
+        if hasattr(self, "lbl_lat"):
+            self.lbl_lat.configure(text=t("label_lat"))
+        if hasattr(self, "lbl_lon"):
+            self.lbl_lon.configure(text=t("label_lon"))
+        if hasattr(self, "btn_teleport"):
+            self.btn_teleport.configure(text=t("btn_teleport"))
+        if hasattr(self, "clear_location_btn"):
+            self.clear_location_btn.configure(text=t("btn_clear_location"))
+
+        # Info label
+        if hasattr(self, "info_label"):
+            self.info_label.configure(text=t("info_tunneld"))
+
+        # Language label
+        if hasattr(self, "lang_label"):
+            self.lang_label.configure(text=t("lang_label"))
+
+        # Status bar
+        if hasattr(self, "status_label"):
+            self.status_label.configure(text=t("status_ready"))
+
     def _start_tunneld_and_discover(self):
         """Check for tunneld service and discover devices."""
-        self.status_label.configure(text="🔄 Checking tunneld service...")
+        self.status_label.configure(text=t("status_checking_tunneld"))
         self.update()
 
         def start_and_discover():
@@ -765,9 +868,7 @@ class iFakeGPSApp(ctk.CTk):
                 self.tunneld_manager.running = True
                 self.after(
                     0,
-                    lambda: self.status_label.configure(
-                        text="✅ Tunneld found! Scanning devices..."
-                    ),
+                    lambda: self.status_label.configure(text=t("status_tunneld_found")),
                 )
             else:
                 # Check if we're running as admin
@@ -776,7 +877,7 @@ class iFakeGPSApp(ctk.CTk):
                     self.after(
                         0,
                         lambda: self.status_label.configure(
-                            text="🔄 Starting tunneld (admin mode)..."
+                            text=t("status_starting_tunneld")
                         ),
                     )
                     success = self.tunneld_manager.start()
@@ -784,7 +885,7 @@ class iFakeGPSApp(ctk.CTk):
                         self.after(
                             0,
                             lambda: self.status_label.configure(
-                                text="✅ Tunneld started! Scanning devices..."
+                                text=t("status_tunneld_started")
                             ),
                         )
                         # Wait for tunneld to initialize
@@ -793,7 +894,7 @@ class iFakeGPSApp(ctk.CTk):
                         self.after(
                             0,
                             lambda: self.status_label.configure(
-                                text="⚠️ Failed to start tunneld. Check for errors."
+                                text=t("status_tunneld_failed")
                             ),
                         )
                 else:
@@ -801,7 +902,7 @@ class iFakeGPSApp(ctk.CTk):
                     self.after(
                         0,
                         lambda: self.status_label.configure(
-                            text="⚠️ Run as Administrator to auto-start tunneld."
+                            text=t("status_tunneld_need_admin")
                         ),
                     )
                     # Wait and check if user started it manually
@@ -811,7 +912,7 @@ class iFakeGPSApp(ctk.CTk):
                         self.after(
                             0,
                             lambda: self.status_label.configure(
-                                text="✅ Tunneld detected! Scanning devices..."
+                                text=t("status_tunneld_detected")
                             ),
                         )
 
@@ -835,14 +936,12 @@ class iFakeGPSApp(ctk.CTk):
         if not running:
             self.after(
                 0,
-                lambda: self.status_label.configure(
-                    text="⚠️ tunneld stopped unexpectedly"
-                ),
+                lambda: self.status_label.configure(text=t("status_tunneld_stopped")),
             )
 
     def _refresh_devices(self):
         """Refresh the list of available devices."""
-        self.status_label.configure(text="🔍 Scanning for devices...")
+        self.status_label.configure(text=t("status_scanning"))
         self.update()
 
         def discover():
@@ -865,16 +964,13 @@ class iFakeGPSApp(ctk.CTk):
         if not devices:
             self.no_devices_label = ctk.CTkLabel(
                 self.device_listbox_frame,
-                text="No devices found.\n\n"
-                "Please restart the application\nas Administrator to enable connectivity!",
+                text=t("no_devices_admin"),
                 font=ctk.CTkFont(size=12),
                 text_color="orange",
                 justify="center",
             )
             self.no_devices_label.grid(row=0, column=0, padx=10, pady=20)
-            self.status_label.configure(
-                text="⚠️ No connected devices found. Please run as Administrator."
-            )
+            self.status_label.configure(text=t("status_no_devices"))
         else:
             for i, device in enumerate(devices):
                 device_btn = ctk.CTkButton(
@@ -891,7 +987,7 @@ class iFakeGPSApp(ctk.CTk):
                 device_btn.grid(row=i, column=0, padx=5, pady=2, sticky="ew")
 
             self.status_label.configure(
-                text=f"Found {len(devices)} device(s). Click to connect."
+                text=t("status_found_devices", count=len(devices))
             )
 
     def _is_device_connected(self, device: DeviceInfo) -> bool:
@@ -902,7 +998,7 @@ class iFakeGPSApp(ctk.CTk):
 
     def _connect_to_device(self, device: DeviceInfo):
         """Connect to a selected device."""
-        self.status_label.configure(text=f"Connecting to {device.name}...")
+        self.status_label.configure(text=t("status_connecting", name=device.name))
         self.update()
 
         def connect():
@@ -914,8 +1010,8 @@ class iFakeGPSApp(ctk.CTk):
     def _disconnect_device(self):
         """Disconnect from the current device."""
         self.device_manager.disconnect()
-        self.conn_status.configure(text="⭕ Not Connected", text_color="#ef4444")
-        self.status_label.configure(text="Disconnected from device.")
+        self.conn_status.configure(text=t("conn_not_connected"), text_color="#ef4444")
+        self.status_label.configure(text=t("status_disconnected"))
         self._refresh_devices()
 
     def _update_connection_status(self, success: bool, device: DeviceInfo = None):
@@ -931,24 +1027,15 @@ class iFakeGPSApp(ctk.CTk):
                 )
             )
             self.conn_status.configure(text=f"🟢 {device_name}", text_color="#10b981")
-            self.status_label.configure(
-                text=f"Connected to {device_name}. Ready to simulate location."
-            )
+            self.status_label.configure(text=t("status_connected", name=device_name))
             # Refresh device list to show connected state
             self._update_device_list(self.discovered_devices)
         else:
-            self.conn_status.configure(
-                text="🔴 Connection Failed", text_color="#ef4444"
-            )
-            self.status_label.configure(text="Connection failed. Check tunneld status.")
+            self.conn_status.configure(text=t("conn_failed"), text_color="#ef4444")
+            self.status_label.configure(text=t("status_conn_failed"))
             messagebox.showerror(
-                "Connection Failed",
-                "Failed to connect to the device.\n\n"
-                "Make sure:\n"
-                "1. Developer Mode is enabled on device\n"
-                "2. tunneld is running: pymobiledevice3 remote tunneld\n"
-                "3. Device is connected via USB\n"
-                "4. Run tunneld as Administrator/root",
+                t("dialog_conn_failed_title"),
+                t("dialog_conn_failed_msg"),
             )
 
     def _on_mode_change(self):
@@ -962,17 +1049,13 @@ class iFakeGPSApp(ctk.CTk):
                 self.route_frame.grid_remove()
             if hasattr(self, "coord_frame"):
                 self.coord_frame.grid()
-            self.status_label.configure(
-                text="Single Point Mode: Click on the map to teleport to that location."
-            )
+            self.status_label.configure(text=t("status_single_mode"))
         else:
             if hasattr(self, "coord_frame"):
                 self.coord_frame.grid_remove()
             if hasattr(self, "route_frame"):
                 self.route_frame.grid()
-            self.status_label.configure(
-                text="Route Mode: Click on the map to add waypoints for walking."
-            )
+            self.status_label.configure(text=t("status_route_mode"))
 
     def _on_map_click(self, coords):
         """Handle map click."""
@@ -1002,15 +1085,15 @@ class iFakeGPSApp(ctk.CTk):
         self._preview_marker = self.map_widget.set_marker(
             lat,
             lon,
-            text="📍 Teleport here?",
+            text=t("marker_teleport_here"),
             marker_color_circle="#f59e0b",
             marker_color_outside="#d97706",
         )
 
         # Ask for confirmation
         result = messagebox.askyesno(
-            "Confirm Teleport",
-            f"Teleport to this location?\n\nLatitude: {lat:.6f}\nLongitude: {lon:.6f}",
+            t("dialog_confirm_teleport_title"),
+            t("dialog_confirm_teleport_msg", lat=f"{lat:.6f}", lon=f"{lon:.6f}"),
             icon="question",
         )
 
@@ -1024,13 +1107,15 @@ class iFakeGPSApp(ctk.CTk):
             self._set_location_at(lat, lon)
         else:
             # User cancelled
-            self.status_label.configure(text="Teleport cancelled.")
+            self.status_label.configure(text=t("status_teleport_cancelled"))
 
     def _set_location_at(self, lat: float, lon: float):
         """Set the GPS location at the given coordinates."""
         if not self.device_manager.connected:
-            self.status_label.configure(text="⚠️ Device not connected. Connect first.")
-            messagebox.showwarning("Not Connected", "Please connect to a device first.")
+            self.status_label.configure(text=t("status_device_not_connected"))
+            messagebox.showwarning(
+                t("dialog_not_connected_title"), t("dialog_not_connected_msg")
+            )
             return
 
         # Clear existing marker
@@ -1041,7 +1126,7 @@ class iFakeGPSApp(ctk.CTk):
         self.current_position_marker = self.map_widget.set_marker(
             lat,
             lon,
-            text="📍 Current Location",
+            text=t("marker_current_location"),
             marker_color_circle="#ef4444",
             marker_color_outside="#b91c1c",
         )
@@ -1052,16 +1137,18 @@ class iFakeGPSApp(ctk.CTk):
             self.after(0, lambda: self._on_location_set(success, lat, lon))
 
         threading.Thread(target=set_loc, daemon=True).start()
-        self.status_label.configure(text=f"Setting location to {lat:.6f}, {lon:.6f}...")
+        self.status_label.configure(
+            text=t("status_setting_location", lat=f"{lat:.6f}", lon=f"{lon:.6f}")
+        )
 
     def _on_location_set(self, success: bool, lat: float, lon: float):
         """Called after location is set."""
         if success:
-            self.status_label.configure(text=f"✅ Location set to {lat:.6f}, {lon:.6f}")
-        else:
             self.status_label.configure(
-                text="❌ Failed to set location. Check connection."
+                text=t("status_location_set", lat=f"{lat:.6f}", lon=f"{lon:.6f}")
             )
+        else:
+            self.status_label.configure(text=t("status_location_failed"))
 
     def _add_route_point(self, lat: float, lon: float):
         """Add a point to the route."""
@@ -1195,14 +1282,32 @@ class iFakeGPSApp(ctk.CTk):
 
         self.route_points = []
         self._update_route_info()
-        self.status_label.configure(text="Route cleared.")
+        self.status_label.configure(text=t("status_route_cleared"))
 
-    def _on_speed_change(self, value):
+    def _on_speed_slider_change(self, value):
         """Handle speed slider change."""
         speed_kmh = float(value)
-
-        self.speed_value_label.configure(text=f"{speed_kmh:.1f} km/h")
+        self.speed_entry_var.set(f"{speed_kmh:.1f}")
         self.route_walker.set_speed(speed_kmh)
+
+    def _on_speed_entry_change(self, event=None):
+        """Handle speed entry change."""
+        try:
+            val = float(self.speed_entry_var.get())
+            if val < 0:
+                val = 0.0
+            if val > 1000:
+                val = 1000.0
+            self.speed_slider.set(val)
+            self.route_walker.set_speed(val)
+            # Update UI to clean formatting
+            self.speed_entry_var.set(f"{val:.1f}")
+        except ValueError:
+            # Revert to slider value if invalid input
+            self.speed_entry_var.set(f"{self.speed_slider.get():.1f}")
+
+        # Remove focus from entry
+        self.focus_set()
 
     def _on_noise_change(self, value):
         """Handle noise slider change."""
@@ -1211,42 +1316,38 @@ class iFakeGPSApp(ctk.CTk):
         self.route_walker.set_speed_noise(noise_percent)
 
     def _start_walking(self):
-        """Start walking the route."""
+        """Start or resume walking the route."""
         if not self.device_manager.connected:
-            messagebox.showwarning("Not Connected", "Please connect to a device first.")
+            messagebox.showwarning(
+                t("dialog_not_connected_title"), t("dialog_not_connected_msg")
+            )
             return
 
         if len(self.route_points) < 2:
             messagebox.showwarning(
-                "Invalid Route", "Please add at least 2 points to the route."
+                t("dialog_invalid_route_title"), t("dialog_invalid_route_msg")
             )
             return
 
-        if self.route_walker.is_walking:
-            # Logic for pause/resume was handled by RouteWalker having 'paused' state in original.
-            # In new Core RouteWalker, we don't have explicit 'pause' method exposed in the interface I wrote earlier?
-            # Let's check src/core/route_walker.py content from Step 448.
-            # It has start() and stop(). It does NOT have pause().
-            # I need to update RouteWalker or handle pause by stopping and restarting from index?
-            # For now, let's assume 'stop' resets.
-            # To keep it simple for this refactor, I will just support Stop/Start.
-            # Or I can quickly update RouteWalker to support Pause?
-            # Given the size of task, let's treat Pause as Stop for now, or just Start.
-            pass
+        # If currently paused, resume from the saved position
+        if self.route_walker.is_walking and self.route_walker.is_paused:
+            self.route_walker.resume()
+            self.status_label.configure(text=t("status_resumed"))
+            return
 
-        # Set route
+        # Otherwise, start fresh from the beginning
         self.route_walker.set_route(self.route_points)
         self.route_walker.set_loop(self.loop_var.get())
-
-        # Start walking
         self.route_walker.start()
-        self.status_label.configure(text="🚶 Walking route...")
+        self.status_label.configure(text=t("status_walking"))
 
     def _pause_walking(self):
-        """Pause walking."""
-        # Simple implementation: just stop for now as core doesn't support pause state
-        self.route_walker.stop()
-        self.status_label.configure(text="⏸ Walking paused (stopped).")
+        """Pause walking at the current position (can be resumed with ▶)."""
+        if self.route_walker.is_walking and not self.route_walker.is_paused:
+            self.route_walker.pause()
+            self.status_label.configure(text=t("status_paused"))
+        elif not self.route_walker.is_walking:
+            self.status_label.configure(text=t("status_not_walking"))
 
     def _stop_walking(self):
         """Stop walking."""
@@ -1257,7 +1358,7 @@ class iFakeGPSApp(ctk.CTk):
             self.current_position_marker.delete()
             self.current_position_marker = None
 
-        self.status_label.configure(text="⏹ Walking stopped.")
+        self.status_label.configure(text=t("status_walk_stopped"))
 
     def _on_position_update(self, lat: float, lon: float):
         """Called when walking position updates."""
@@ -1283,7 +1384,7 @@ class iFakeGPSApp(ctk.CTk):
         """Called when walking is complete."""
 
         def update():
-            self.status_label.configure(text="✅ Route walk completed!")
+            self.status_label.configure(text=t("status_walk_complete"))
 
         self.after(0, update)
 
@@ -1304,14 +1405,16 @@ class iFakeGPSApp(ctk.CTk):
 
         except ValueError as e:
             messagebox.showerror(
-                "Invalid Coordinates",
-                "Please enter valid latitude (-90 to 90) and longitude (-180 to 180).",
+                t("dialog_invalid_coords_title"),
+                t("dialog_invalid_coords_msg"),
             )
 
     def _clear_location(self):
         """Clear the simulated location."""
         if not self.device_manager.connected:
-            messagebox.showwarning("Not Connected", "Please connect to a device first.")
+            messagebox.showwarning(
+                t("dialog_not_connected_title"), t("dialog_not_connected_msg")
+            )
             return
 
         def clear_loc():
@@ -1319,17 +1422,17 @@ class iFakeGPSApp(ctk.CTk):
             self.after(0, lambda: self._on_location_cleared(success))
 
         threading.Thread(target=clear_loc, daemon=True).start()
-        self.status_label.configure(text="Clearing location simulation...")
+        self.status_label.configure(text=t("status_clearing_location"))
 
     def _on_location_cleared(self, success: bool):
         """Called after location is cleared."""
         if success:
-            self.status_label.configure(text="✅ Location simulation cleared.")
+            self.status_label.configure(text=t("status_location_cleared"))
             if self.current_position_marker:
                 self.current_position_marker.delete()
                 self.current_position_marker = None
         else:
-            self.status_label.configure(text="❌ Failed to clear location.")
+            self.status_label.configure(text=t("status_location_clear_failed"))
 
     def _search_location(self, event=None):
         """Search for a location using Nominatim geocoding."""
