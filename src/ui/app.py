@@ -1364,6 +1364,12 @@ class iFakeGPSApp(ctk.CTk):
         """Called when walking position updates."""
 
         def update():
+            # Discard stale callbacks that arrive after stop() was called.
+            # Because stop() is non-blocking, the old thread may fire one last
+            # update before it notices stop_requested — ignore it.
+            if not self.route_walker.is_walking:
+                return
+
             # Update or create position marker
             if self.current_position_marker:
                 self.current_position_marker.delete()

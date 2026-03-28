@@ -1,3 +1,4 @@
+import itertools
 import math
 import random
 import threading
@@ -7,6 +8,9 @@ from typing import Callable, List, Optional
 from src.core.device_manager import DeviceManager
 from src.core.models import RoutePoint
 from src.utils.logger import logger
+
+# Monotonically-increasing counter used to give each walk run a unique ID.
+_gen_counter = itertools.count(1)
 
 
 class RouteWalker:
@@ -32,6 +36,9 @@ class RouteWalker:
         self.speed_noise_pct = 0.0  # Percentage of noise to add to speed (0.0 - 1.0)
         self.loop = False
         self.thread: Optional[threading.Thread] = None
+        # Generation ID: incremented on every start() / stop() so that a
+        # lingering old thread can detect it is stale and skip its finally block.
+        self._walk_gen: int = 0
 
         # Pause/resume synchronisation
         self._pause_event = threading.Event()
@@ -76,34 +83,44 @@ class RouteWalker:
         if len(self.points) < 1:
             return
 
-        if self.is_walking:
-            self.stop()
+        # Signal any currently-running thread to stop (non-blocking — no join).
+        self.stop_requested = True
+        self._pause_event.set()  # Unblock a paused thread so it can exit
+
+        # Bump the generation BEFORE resetting state.  The old thread's
+        # finally block will see a different gen and won't touch is_walking.
+        self._walk_gen = next(_gen_counter)
+        my_gen = self._walk_gen
 
         # Reset state for a fresh start
         self.stop_requested = False
         self.is_paused = False
-        self._pause_event.set()  # Ensure not paused
         self._resume_segment_index = 0
         self._resume_covered_dist = 0.0
 
         self.is_walking = True
-        self.thread = threading.Thread(target=self._walk_loop, daemon=True)
+        self.thread = threading.Thread(
+            target=self._walk_loop, args=(my_gen,), daemon=True
+        )
         self.thread.start()
 
     def stop(self):
-        """Stop walking and reset position state."""
+        """Signal the walker to stop immediately (non-blocking — no thread join)."""
+        # Bump generation first so the thread's finally won't overwrite our reset.
+        self._walk_gen = next(_gen_counter)
         self.stop_requested = True
         self._pause_event.set()  # Unblock if paused so thread can exit
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=2.0)
         self.is_walking = False
         self.is_paused = False
         self._resume_segment_index = 0
         self._resume_covered_dist = 0.0
+        logger.info("RouteWalker stop signalled")
 
-    def _walk_loop(self):
-        """Main walking loop - supports resuming from a saved segment + progress."""
-        logger.info(f"Starting walk. Speed: {self.speed_kmh} km/h, Loop: {self.loop}")
+    def _walk_loop(self, my_gen: int):
+        """Main walking loop – owns exactly one generation token (my_gen)."""
+        logger.info(
+            f"Walk gen={my_gen} started. Speed: {self.speed_kmh} km/h, Loop: {self.loop}"
+        )
 
         try:
             while not self.stop_requested:
@@ -141,12 +158,16 @@ class RouteWalker:
                 if not self.loop or self.stop_requested:
                     break
         except Exception as e:
-            logger.error(f"Error in walk loop: {e}")
+            logger.error(f"Walk gen={my_gen} error: {e}")
         finally:
-            self.is_walking = False
-            if self.completion_callback and not self.stop_requested:
-                self.completion_callback()
-            logger.info("Walk finished/stopped")
+            # Only update shared state if we are still the active generation.
+            # If start() or stop() was called after us, _walk_gen was already
+            # bumped and is_walking was already set correctly — don't touch it.
+            if self._walk_gen == my_gen:
+                self.is_walking = False
+                if self.completion_callback and not self.stop_requested:
+                    self.completion_callback()
+            logger.info(f"Walk gen={my_gen} finished")
 
     def _walk_segment(self, start: RoutePoint, end: RoutePoint):
         """Walk between two route points with interpolation and pause support."""
