@@ -1687,11 +1687,11 @@ class iFakeGPSApp(ctk.CTk):
         if len(self.route_points) < 2:
             return
 
-        if self.route_walker.is_active and not self.route_walker.is_paused:
+        if self.route_walker.is_walking and not self.route_walker.is_paused:
             return
 
         # Initialize the walker with the current points list if not active
-        if not self.route_walker.is_active:
+        if not self.route_walker.is_walking:
             # Tell the walker to start from the beginning
             self.route_walker.start(
                 self.route_points,
@@ -1709,7 +1709,7 @@ class iFakeGPSApp(ctk.CTk):
 
     def _pause_walking(self):
         """Pause the active route walk."""
-        if self.route_walker.is_active and not self.route_walker.is_paused:
+        if self.route_walker.is_walking and not self.route_walker.is_paused:
             self.route_walker.pause()
             self.status_label.configure(text=t("status_paused"))
 

@@ -53,8 +53,8 @@ Repository = "https://github.com/user/ifakegps"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pyinstaller>=6.0.0",
     "ruff>=0.1.0",
     "black>=23.0.0",
