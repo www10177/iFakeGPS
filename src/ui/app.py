@@ -403,32 +403,32 @@ class iFakeGPSApp(ctk.CTk):
 
         self.mode_var = ctk.StringVar(value="single")
 
-        single_radio = ctk.CTkRadioButton(
+        self.single_radio = ctk.CTkRadioButton(
             mode_frame,
             text=t("mode_single"),
             variable=self.mode_var,
             value="single",
             command=self._on_mode_change,
         )
-        single_radio.grid(row=1, column=0, padx=20, pady=5, sticky="w")
+        self.single_radio.grid(row=1, column=0, padx=20, pady=5, sticky="w")
 
-        route_radio = ctk.CTkRadioButton(
+        self.route_radio = ctk.CTkRadioButton(
             mode_frame,
             text=t("mode_route"),
             variable=self.mode_var,
             value="route",
             command=self._on_mode_change,
         )
-        route_radio.grid(row=2, column=0, padx=20, pady=5, sticky="w")
+        self.route_radio.grid(row=2, column=0, padx=20, pady=5, sticky="w")
 
-        nav_radio = ctk.CTkRadioButton(
+        self.nav_radio = ctk.CTkRadioButton(
             mode_frame,
             text=t("mode_navigation"),
             variable=self.mode_var,
             value="navigation",
             command=self._on_mode_change,
         )
-        nav_radio.grid(row=3, column=0, padx=20, pady=(5, 10), sticky="w")
+        self.nav_radio.grid(row=3, column=0, padx=20, pady=(5, 10), sticky="w")
 
         # Route controls
         self.route_frame = ctk.CTkFrame(sidebar)
@@ -520,7 +520,7 @@ class iFakeGPSApp(ctk.CTk):
         # Route info
         self.route_info = ctk.CTkLabel(
             self.route_frame,
-            text="Points: 0 | Distance: 0 m",
+            text=t("route_info", points=0, distance="0 m"),
             font=ctk.CTkFont(size=12),
             text_color="gray",
         )
@@ -601,11 +601,13 @@ class iFakeGPSApp(ctk.CTk):
         # Tabs for Storage and Routing Engine
         self.rt_tabview = ctk.CTkTabview(self.storage_settings_frame, height=140)
         self.rt_tabview.pack(fill="both", expand=True, padx=5, pady=5)
-        self.rt_tabview.add("Storage")
-        self.rt_tabview.add("Routing")
+        self._storage_tab_name = t("tab_storage")
+        self._routing_tab_name = t("tab_routing")
+        self.rt_tabview.add(self._storage_tab_name)
+        self.rt_tabview.add(self._routing_tab_name)
 
         # 1. Storage Tab
-        tab_storage = self.rt_tabview.tab("Storage")
+        tab_storage = self.rt_tabview.tab(self._storage_tab_name)
         tab_storage.grid_columnconfigure((0, 1), weight=1)
 
         self.btn_save_route = ctk.CTkButton(
@@ -645,7 +647,7 @@ class iFakeGPSApp(ctk.CTk):
         self.btn_export_gpx.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
         # 2. Routing Engine Tab
-        tab_routing = self.rt_tabview.tab("Routing")
+        tab_routing = self.rt_tabview.tab(self._routing_tab_name)
         tab_routing.grid_columnconfigure(1, weight=1)
 
         self.provider_var = ctk.StringVar(value=self.routing_service.provider)
@@ -917,9 +919,12 @@ class iFakeGPSApp(ctk.CTk):
             self.dev_enable_btn.configure(text=t("dev_enable_btn"))
 
         # Mode
-        # Note: radio buttons keep internal values but we update display text
-        # This is tricky with CTkRadioButton — we'd need to recreate them.
-        # For now, static labels that we CAN update:
+        if hasattr(self, "single_radio"):
+            self.single_radio.configure(text=t("mode_single"))
+        if hasattr(self, "route_radio"):
+            self.route_radio.configure(text=t("mode_route"))
+        if hasattr(self, "nav_radio"):
+            self.nav_radio.configure(text=t("mode_navigation"))
         if hasattr(self, "lbl_route"):
             self.lbl_route.configure(text=t("route_walking"))
         if hasattr(self, "lbl_speed"):
@@ -948,6 +953,18 @@ class iFakeGPSApp(ctk.CTk):
             self.chk_loop.configure(text=t("chk_loop"))
         if hasattr(self, "clear_route_btn"):
             self.clear_route_btn.configure(text=t("btn_clear_route"))
+        if hasattr(self, "btn_calc_route"):
+            self.btn_calc_route.configure(text=t("btn_calc_route"))
+        if hasattr(self, "storage_title_label"):
+            self.storage_title_label.configure(text=t("route_storage_title"))
+        if hasattr(self, "btn_save_route"):
+            self.btn_save_route.configure(text=t("btn_save_route"))
+        if hasattr(self, "btn_load_route"):
+            self.btn_load_route.configure(text=t("btn_load_route"))
+        if hasattr(self, "btn_import_gpx"):
+            self.btn_import_gpx.configure(text=t("btn_import_gpx"))
+        if hasattr(self, "btn_export_gpx"):
+            self.btn_export_gpx.configure(text=t("btn_export_gpx"))
 
         # Manual coords
         if hasattr(self, "lbl_manual"):
@@ -972,6 +989,8 @@ class iFakeGPSApp(ctk.CTk):
         # Status bar
         if hasattr(self, "status_label"):
             self.status_label.configure(text=t("status_ready"))
+        if hasattr(self, "route_info"):
+            self._update_route_info()
 
     def _start_tunneld_and_discover(self):
         """Check for tunneld service and discover devices."""
@@ -1318,7 +1337,12 @@ class iFakeGPSApp(ctk.CTk):
         self._update_route_info()
 
         self.status_label.configure(
-            text=f"Added point {len(self.route_points)} at {lat:.6f}, {lon:.6f} (right-click to remove)"
+            text=t(
+                "status_point_added",
+                index=len(self.route_points),
+                lat=f"{lat:.6f}",
+                lon=f"{lon:.6f}",
+            )
         )
 
     def _remove_route_point(self, point: RoutePoint):
@@ -1341,7 +1365,7 @@ class iFakeGPSApp(ctk.CTk):
             self._update_route_info()
 
             self.status_label.configure(
-                text=f"Removed point. {len(self.route_points)} points remaining."
+                text=t("status_point_removed", count=len(self.route_points))
             )
 
     def _update_route_path(self):
@@ -1393,9 +1417,7 @@ class iFakeGPSApp(ctk.CTk):
         else:
             distance_str = f"{total_distance:.0f} m"
 
-        self.route_info.configure(
-            text=f"Points: {num_points} | Distance: {distance_str}"
-        )
+        self.route_info.configure(text=t("route_info", points=num_points, distance=distance_str))
 
     def _clear_route(self):
         """Clear the current route."""
@@ -1431,7 +1453,10 @@ class iFakeGPSApp(ctk.CTk):
     def _calculate_navigation_route(self):
         """Fetch route from OSRM/ORS using the added markers."""
         if len(self.route_points) < 2:
-            messagebox.showinfo("Wait", "Please add at least 2 waypoints.")
+            messagebox.showinfo(
+                t("dialog_invalid_route_title"),
+                t("dialog_invalid_route_msg"),
+            )
             return
 
         self.status_label.configure(text=t("status_calculating_route"))
@@ -1472,13 +1497,13 @@ class iFakeGPSApp(ctk.CTk):
             dense_points[0].marker = self.map_widget.set_marker(
                 dense_points[0].latitude,
                 dense_points[0].longitude,
-                text="Start",
+                text=t("marker_start"),
                 marker_color_circle="#10b981",
             )
             dense_points[-1].marker = self.map_widget.set_marker(
                 dense_points[-1].latitude,
                 dense_points[-1].longitude,
-                text="End",
+                text=t("marker_end"),
                 marker_color_circle="#ef4444",
             )
 
@@ -1489,7 +1514,7 @@ class iFakeGPSApp(ctk.CTk):
 
     def _on_navigation_route_fail(self, msg: str):
         self.status_label.configure(text=t("status_calc_failed", error=msg))
-        messagebox.showerror("Routing Error", msg)
+        messagebox.showerror(t("dialog_routing_error_title"), msg)
 
     # -------------------------------------------------------------
     # Route Storage and GPX
@@ -1503,12 +1528,15 @@ class iFakeGPSApp(ctk.CTk):
         ).get_input()
         if name:
             self.route_storage.save(name, self.route_points)
-            messagebox.showinfo("Saved", f"Route '{name}' successfully saved.")
+            messagebox.showinfo(
+                t("dialog_saved_title"),
+                t("dialog_saved_msg", name=name),
+            )
 
     def _load_route_dialog(self):
         routes = self.route_storage.list_all()
         if not routes:
-            messagebox.showinfo("Info", "No saved routes found.")
+            messagebox.showinfo(t("dialog_info_title"), t("dialog_no_routes_msg"))
             return
 
         # Simple Tkinter listbox window for selection (CTk doesn't have a simple listbox popup)
@@ -1523,7 +1551,20 @@ class iFakeGPSApp(ctk.CTk):
 
         ctk.CTkLabel(top, text=t("dialog_load_msg")).pack(pady=5)
 
-        listbox = tk.Listbox(top, font=("Segoe UI", 11))
+        listbox = tk.Listbox(
+            top,
+            font=("Segoe UI", 11),
+            bg="#111827",
+            fg="#f9fafb",
+            selectbackground="#2563eb",
+            selectforeground="#ffffff",
+            highlightthickness=1,
+            highlightbackground="#374151",
+            highlightcolor="#3b82f6",
+            relief="flat",
+            borderwidth=0,
+            activestyle="none",
+        )
         listbox.pack(fill="both", expand=True, padx=10, pady=5)
 
         for r in routes:
@@ -1544,13 +1585,13 @@ class iFakeGPSApp(ctk.CTk):
                 points[0].marker = self.map_widget.set_marker(
                     points[0].latitude,
                     points[0].longitude,
-                    text="Start",
+                    text=t("marker_start"),
                     marker_color_circle="#10b981",
                 )
                 points[-1].marker = self.map_widget.set_marker(
                     points[-1].latitude,
                     points[-1].longitude,
-                    text="End",
+                    text=t("marker_end"),
                     marker_color_circle="#ef4444",
                 )
             else:
@@ -1558,7 +1599,7 @@ class iFakeGPSApp(ctk.CTk):
                     p.marker = self.map_widget.set_marker(
                         p.latitude,
                         p.longitude,
-                        text=f"P{i + 1}",
+                        text=t("marker_point", index=i + 1),
                         marker_color_circle="#3b82f6",
                     )
 
@@ -1571,14 +1612,17 @@ class iFakeGPSApp(ctk.CTk):
                 self.map_widget.set_position(points[0].latitude, points[0].longitude)
 
             top.destroy()
-            self.status_label.configure(text=f"Loaded route: {name}")
+            self.status_label.configure(text=t("status_route_loaded", name=name))
 
-        def on_delete(event):
+        def on_delete(event=None):
             sel = listbox.curselection()
             if not sel:
                 return
             idx = sel[0]
-            if messagebox.askyesno("Delete", f"Delete '{routes[idx].name}'?"):
+            if messagebox.askyesno(
+                t("dialog_delete_title"),
+                t("dialog_delete_confirm_msg", name=routes[idx].name),
+            ):
                 self.route_storage.delete(routes[idx].id)
                 listbox.delete(idx)
                 routes.pop(idx)
@@ -1586,6 +1630,9 @@ class iFakeGPSApp(ctk.CTk):
         btn_frm = ctk.CTkFrame(top, fg_color="transparent")
         btn_frm.pack(pady=10)
         ctk.CTkButton(btn_frm, text=t("btn_load_route"), command=on_load).pack(
+            side="left", padx=5
+        )
+        ctk.CTkButton(btn_frm, text=t("btn_delete_route"), command=on_delete).pack(
             side="left", padx=5
         )
 
@@ -1614,7 +1661,10 @@ class iFakeGPSApp(ctk.CTk):
                 )
             with open(path, "w", encoding="utf-8") as f:
                 f.write(gpx.to_xml())
-            messagebox.showinfo("Exported", f"Saved to {path}")
+            messagebox.showinfo(
+                t("dialog_exported_title"),
+                t("dialog_exported_msg", path=path),
+            )
 
     def _import_gpx_dialog(self):
         from tkinter import filedialog
@@ -1630,13 +1680,13 @@ class iFakeGPSApp(ctk.CTk):
                     points[0].marker = self.map_widget.set_marker(
                         points[0].latitude,
                         points[0].longitude,
-                        text="Start",
+                        text=t("marker_start"),
                         marker_color_circle="#10b981",
                     )
                     points[-1].marker = self.map_widget.set_marker(
                         points[-1].latitude,
                         points[-1].longitude,
-                        text="End",
+                        text=t("marker_end"),
                         marker_color_circle="#ef4444",
                     )
                 else:
@@ -1644,7 +1694,7 @@ class iFakeGPSApp(ctk.CTk):
                         p.marker = self.map_widget.set_marker(
                             p.latitude,
                             p.longitude,
-                            text=f"P{i + 1}",
+                            text=t("marker_point", index=i + 1),
                             marker_color_circle="#3b82f6",
                         )
 
@@ -1656,10 +1706,13 @@ class iFakeGPSApp(ctk.CTk):
                         points[0].latitude, points[0].longitude
                     )
                 self.status_label.configure(
-                    text=f"GPX Loaded: {name} ({len(points)} pts)"
+                    text=t("status_gpx_loaded", name=name, points=len(points))
                 )
             except Exception as e:
-                messagebox.showerror("GPX Error", f"Failed to import GPX:\n{e}")
+                messagebox.showerror(
+                    t("dialog_gpx_error_title"),
+                    t("dialog_gpx_error_msg", error=e),
+                )
 
     def _on_speed_entry_change(self, event=None):
         """Handle speed entry change."""
