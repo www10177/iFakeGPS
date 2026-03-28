@@ -4,7 +4,7 @@ import threading
 import time
 from enum import Enum
 from tkinter import messagebox
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import customtkinter as ctk
 
@@ -16,6 +16,7 @@ from src.ui.caching_map_view import CachingTileMapView
 from src.ui.i18n import LANGUAGES, get_lang, set_lang, t
 from src.ui.tooltip import add_tooltip_button
 from src.utils.logger import logger
+from src.utils.notifier import notify
 
 
 class AppMode(Enum):
@@ -76,7 +77,7 @@ class iFakeGPSApp(ctk.CTk):
         self.route_points: list[RoutePoint] = []
         self.route_path = None  # Map path object
         self.current_position_marker = None
-        self.discovered_devices: List[DeviceInfo] = []
+        self.discovered_devices: list[DeviceInfo] = []
 
         # Build UI
         self._create_ui()
@@ -697,8 +698,8 @@ class iFakeGPSApp(ctk.CTk):
 
         # Map controls (Simplified as per user request)
         # Search, Zoom, and Type selection removed.
-        map_controls = ctk.CTkFrame(map_frame, fg_color="transparent")
-        # map_controls.grid(row=1, column=0, padx=10, pady=10, sticky="ew") # Nothing to show currently
+        # Map controls placeholder (currently empty; kept for future use)
+        # map_controls = ctk.CTkFrame(map_frame, fg_color="transparent")
 
     def _set_default_location(self):
         """Try to set map position based on Windows Location API, with IP fallback."""
@@ -953,7 +954,7 @@ class iFakeGPSApp(ctk.CTk):
 
         threading.Thread(target=discover, daemon=True).start()
 
-    def _update_device_list(self, devices: List[DeviceInfo]):
+    def _update_device_list(self, devices: list[DeviceInfo]):
         """Update the device list in the UI."""
         self.discovered_devices = devices
 
@@ -1391,6 +1392,10 @@ class iFakeGPSApp(ctk.CTk):
 
         def update():
             self.status_label.configure(text=t("status_walk_complete"))
+            notify(
+                title=t("notify_walk_complete_title"),
+                message=t("notify_walk_complete_body"),
+            )
 
         self.after(0, update)
 
@@ -1409,7 +1414,7 @@ class iFakeGPSApp(ctk.CTk):
             # Set location
             self._set_location_at(lat, lon)
 
-        except ValueError as e:
+        except ValueError:
             messagebox.showerror(
                 t("dialog_invalid_coords_title"),
                 t("dialog_invalid_coords_msg"),

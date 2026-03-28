@@ -3,7 +3,8 @@ import math
 import random
 import threading
 import time
-from typing import Callable, List, Optional
+from collections.abc import Callable
+from typing import Optional
 
 from src.core.device_manager import DeviceManager
 from src.core.models import RoutePoint
@@ -28,7 +29,7 @@ class RouteWalker:
         self.device_manager = device_manager
         self.update_callback = update_callback
         self.completion_callback = completion_callback
-        self.points: List[RoutePoint] = []
+        self.points: list[RoutePoint] = []
         self.is_walking = False
         self.is_paused = False
         self.stop_requested = False
@@ -48,7 +49,7 @@ class RouteWalker:
         self._resume_segment_index: int = 0  # which segment to continue from
         self._resume_covered_dist: float = 0.0  # how far into that segment (km)
 
-    def set_route(self, points: List[RoutePoint]):
+    def set_route(self, points: list[RoutePoint]):
         """Set the route points to walk.
 
         Stores a *live reference* to the list so that points appended by the

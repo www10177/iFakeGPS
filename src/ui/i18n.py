@@ -12,13 +12,12 @@ Usage:
 """
 
 import locale
-from typing import Dict
 
 # ---------------------------------------------------------------------------
 # String tables
 # ---------------------------------------------------------------------------
 
-_STRINGS: Dict[str, Dict[str, str]] = {}
+_STRINGS: dict[str, dict[str, str]] = {}
 
 _STRINGS["en"] = {
     # --- Window ---
@@ -90,6 +89,8 @@ _STRINGS["en"] = {
     "status_not_walking": "Not currently walking.",
     "status_walk_stopped": "⏹ Walking stopped.",
     "status_walk_complete": "✅ Route walk completed!",
+    "notify_walk_complete_title": "iFakeGPS",
+    "notify_walk_complete_body": "Route walk completed! All waypoints have been visited.",
     "status_route_cleared": "Route cleared.",
     "status_setting_location": "Setting location to {lat}, {lon}...",
     "status_location_set": "✅ Location set to {lat}, {lon}",
@@ -238,6 +239,8 @@ _STRINGS["zh_TW"] = {
     "status_not_walking": "目前未在行走。",
     "status_walk_stopped": "⏹ 行走已停止。",
     "status_walk_complete": "✅ 路線行走完成！",
+    "notify_walk_complete_title": "iFakeGPS",
+    "notify_walk_complete_body": "路線行走已完成！所有路點均已到達。",
     "status_route_cleared": "路線已清除。",
     "status_setting_location": "正在設定位置到 {lat}, {lon}...",
     "status_location_set": "✅ 位置已設定到 {lat}, {lon}",
