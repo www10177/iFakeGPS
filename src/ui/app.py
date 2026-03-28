@@ -458,7 +458,7 @@ class iFakeGPSApp(ctk.CTk):
         speed_val_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
         speed_val_frame.grid(row=1, column=1, padx=10, pady=5, sticky="e")
 
-        self.speed_entry_var = ctk.StringVar(value="5.0")
+        self.speed_entry_var = ctk.StringVar(value="20.0")
         self.speed_entry = ctk.CTkEntry(
             speed_val_frame,
             textvariable=self.speed_entry_var,
@@ -485,7 +485,8 @@ class iFakeGPSApp(ctk.CTk):
         self.speed_slider.grid(
             row=2, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
         )
-        self.speed_slider.set(5)
+        self.speed_slider.set(20)
+        self.route_walker.set_speed(20.0)
 
         # Speed noise slider — label row with tooltip icon
         noise_label_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
@@ -499,7 +500,7 @@ class iFakeGPSApp(ctk.CTk):
         )
         self._noise_tip_icon.pack(side="left", padx=(2, 0))
 
-        self.noise_value_label = ctk.CTkLabel(self.route_frame, text="0%")
+        self.noise_value_label = ctk.CTkLabel(self.route_frame, text="10%")
         self.noise_value_label.grid(row=3, column=1, padx=10, pady=5, sticky="e")
 
         self.noise_slider = ctk.CTkSlider(
@@ -512,7 +513,8 @@ class iFakeGPSApp(ctk.CTk):
         self.noise_slider.grid(
             row=4, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
         )
-        self.noise_slider.set(0)
+        self.noise_slider.set(10)
+        self.route_walker.set_speed_noise(10.0)
 
         self.route_frame.grid_columnconfigure(0, weight=1)
         self.route_frame.grid_columnconfigure(1, weight=1)
@@ -1539,33 +1541,39 @@ class iFakeGPSApp(ctk.CTk):
             messagebox.showinfo(t("dialog_info_title"), t("dialog_no_routes_msg"))
             return
 
-        # Simple Tkinter listbox window for selection (CTk doesn't have a simple listbox popup)
+        # Use CTkToplevel to keep dark-theme text/background readable.
         import tkinter as tk
-        from tkinter import Toplevel
 
-        top = Toplevel(self)
+        top = ctk.CTkToplevel(self)
         top.title(t("dialog_load_title"))
-        top.geometry("400x300")
+        top.geometry("460x340")
+        top.configure(fg_color="#0f172a")
         top.transient(self)
         top.grab_set()
 
-        ctk.CTkLabel(top, text=t("dialog_load_msg")).pack(pady=5)
+        ctk.CTkLabel(
+            top,
+            text=t("dialog_load_msg"),
+            text_color="#e5e7eb",
+            justify="left",
+            wraplength=420,
+        ).pack(padx=10, pady=(10, 6), anchor="w")
 
         listbox = tk.Listbox(
             top,
-            font=("Segoe UI", 11),
-            bg="#111827",
-            fg="#f9fafb",
-            selectbackground="#2563eb",
+            font=("Segoe UI", 12),
+            bg="#020617",
+            fg="#f8fafc",
+            selectbackground="#0ea5e9",
             selectforeground="#ffffff",
             highlightthickness=1,
-            highlightbackground="#374151",
-            highlightcolor="#3b82f6",
+            highlightbackground="#1e293b",
+            highlightcolor="#38bdf8",
             relief="flat",
             borderwidth=0,
             activestyle="none",
         )
-        listbox.pack(fill="both", expand=True, padx=10, pady=5)
+        listbox.pack(fill="both", expand=True, padx=10, pady=6)
 
         for r in routes:
             listbox.insert(
@@ -1731,9 +1739,9 @@ class iFakeGPSApp(ctk.CTk):
 
     def _on_noise_change(self, value):
         """Handle noise slider change."""
-        noise_pct = float(value)
-        self.noise_value_label.configure(text=f"{noise_pct:.0f}%")
-        self.route_walker.set_noise(noise_pct)
+        noise_percent = float(value)
+        self.noise_value_label.configure(text=f"{noise_percent:.0f}%")
+        self.route_walker.set_speed_noise(noise_percent)
 
     def _start_walking(self):
         """Start or resume walking the route."""
@@ -1743,13 +1751,11 @@ class iFakeGPSApp(ctk.CTk):
         if self.route_walker.is_walking and not self.route_walker.is_paused:
             return
 
-        # Initialize the walker with the current points list if not active
+        # Initialize the walker with current UI state if not active
         if not self.route_walker.is_walking:
-            # Tell the walker to start from the beginning
-            self.route_walker.start(
-                self.route_points,
-                loop=self.loop_var.get(),
-            )
+            self.route_walker.set_route(self.route_points)
+            self.route_walker.set_loop(self.loop_var.get())
+            self.route_walker.start()
             self.status_label.configure(text=t("status_walking"))
         elif self.route_walker.is_paused:
             self.route_walker.resume()
@@ -1821,19 +1827,6 @@ class iFakeGPSApp(ctk.CTk):
             title=t("notify_walk_complete_title"),
             message=t("notify_walk_complete_body"),
         )
-        # Use our new notifier utility to show a Toast or simple dialog
-        import src.utils.notifier as notifier
-
-        notifier.show_notification(
-            title=t("notify_walk_complete_title"),
-            message=t("notify_walk_complete_body"),
-        )
-
-    def _on_noise_change(self, value):
-        """Handle noise slider change."""
-        noise_percent = float(value)
-        self.noise_value_label.configure(text=f"{noise_percent:.0f}%")
-        self.route_walker.set_speed_noise(noise_percent)
 
     def _set_manual_location(self):
         """Set location from manual coordinates."""

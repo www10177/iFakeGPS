@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **載入路線視窗可讀性改善**：改為使用 `CTkToplevel`，並調整提示文字與清單色彩對比（深底亮字與高對比選取色），修正文字在視窗中難以辨識的問題。
+- **預設速度調整**：路線行走預設速度從 `5 km/h` 調整為 `20 km/h`（含 UI 預設值與 `RouteWalker` 預設值）。
+- **預設 Noise 調整**：速度噪音預設從 `0%` 調整為 `10%`（含 UI 預設值與 `RouteWalker` 預設值）。
+
+### Fixed
+- **行走初始化一致性**：修正開始行走時的 `RouteWalker.start()` 呼叫流程，改為先設定路線與 loop，再啟動 walker。
+- **重複通知問題**：移除路線完成後重複觸發的桌面通知呼叫。
+- **重複 noise handler**：移除重複定義的 `_on_noise_change`，統一使用 `set_speed_noise`。
+
 ## [1.4.0] - 2026-03-28
 
 ### Added

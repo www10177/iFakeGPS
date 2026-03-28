@@ -33,8 +33,8 @@ class RouteWalker:
         self.is_walking = False
         self.is_paused = False
         self.stop_requested = False
-        self.speed_kmh = 5.0  # Default speed
-        self.speed_noise_pct = 0.0  # Percentage of noise to add to speed (0.0 - 1.0)
+        self.speed_kmh = 20.0  # Default speed
+        self.speed_noise_pct = 0.1  # Percentage of noise to add to speed (0.0 - 1.0)
         self.loop = False
         self.thread: Optional[threading.Thread] = None
         # Generation ID: incremented on every start() / stop() so that a

@@ -55,6 +55,7 @@ This project uses `uv` for dependency management and execution.
 
 7.  **Release & Changelog Rules (CI Parsed)**:
     *   Keep release-format instructions in this `AGENTS.md` (not in `CHANGELOG.md`).
+    *   `CHANGELOG.md` 內容一律使用繁體中文撰寫。
     *   For each release, add a section in `CHANGELOG.md` using this exact header style:
         *   `## [X.Y.Z] - YYYY-MM-DD`
     *   Recommended subsections:
