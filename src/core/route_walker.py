@@ -49,8 +49,13 @@ class RouteWalker:
         self._resume_covered_dist: float = 0.0  # how far into that segment (km)
 
     def set_route(self, points: List[RoutePoint]):
-        """Set the route points to walk."""
-        self.points = points
+        """Set the route points to walk.
+
+        Stores a *live reference* to the list so that points appended by the
+        UI after walking has started are automatically picked up at the tail
+        of the current run (Append-only / dynamic route).
+        """
+        self.points = points  # live reference, NOT a copy
 
     def set_speed(self, speed_kmh: float):
         """Set walking speed in km/h."""
@@ -97,6 +102,7 @@ class RouteWalker:
         self.is_paused = False
         self._resume_segment_index = 0
         self._resume_covered_dist = 0.0
+        self._dispatched_index = 0  # next point index to start a segment FROM
 
         self.is_walking = True
         self.thread = threading.Thread(
@@ -114,23 +120,26 @@ class RouteWalker:
         self.is_paused = False
         self._resume_segment_index = 0
         self._resume_covered_dist = 0.0
+        self._dispatched_index = 0
         logger.info("RouteWalker stop signalled")
 
     def _walk_loop(self, my_gen: int):
-        """Main walking loop – owns exactly one generation token (my_gen)."""
+        """Main walking loop – owns exactly one generation token (my_gen).
+
+        Append-only dynamic route:
+          self.points is a *live reference* to the UI's route list.
+          After each segment we re-check len(self.points) so that any points
+          appended by the user mid-walk are automatically walked at the tail.
+        """
         logger.info(
             f"Walk gen={my_gen} started. Speed: {self.speed_kmh} km/h, Loop: {self.loop}"
         )
 
         try:
             while not self.stop_requested:
-                points_to_walk = list(self.points)
-                if len(points_to_walk) < 1:
-                    break
-
-                # If only one point, just teleport there
-                if len(points_to_walk) == 1:
-                    pt = points_to_walk[0]
+                # --- Handle the single-point edge case ---
+                if len(self.points) == 1 and self._dispatched_index == 0:
+                    pt = self.points[0]
                     self.device_manager.set_location(pt.latitude, pt.longitude)
                     self.update_callback(pt.latitude, pt.longitude)
                     time.sleep(1)
@@ -138,25 +147,56 @@ class RouteWalker:
                         break
                     continue
 
-                # Walk through segments, starting from saved resume index
-                start_idx = self._resume_segment_index
-                for i in range(start_idx, len(points_to_walk) - 1):
-                    if self.stop_requested:
+                if len(self.points) < 2:
+                    # Nothing to walk yet; wait a bit and retry
+                    time.sleep(0.2)
+                    continue
+
+                # --- Walk every pending segment ---
+                # _dispatched_index is the index of the point we are currently
+                # AT (i.e. the start of the next segment to walk).
+                # Resume support: _resume_segment_index may push us further in.
+                i = max(self._dispatched_index, self._resume_segment_index)
+
+                while not self.stop_requested:
+                    # Dynamically read the live list length each iteration
+                    if i >= len(self.points) - 1:
+                        # No more segments available right now
                         break
 
                     self._resume_segment_index = i
-                    start_pt = points_to_walk[i]
-                    end_pt = points_to_walk[i + 1]
+                    start_pt = self.points[i]
+                    end_pt = self.points[i + 1]
                     self._walk_segment(start_pt, end_pt)
-                    # After a segment finishes, clear the intra-segment progress
+
+                    # Segment done — advance the head pointer
                     self._resume_covered_dist = 0.0
+                    i += 1
+                    self._dispatched_index = i
 
-                # Reset segment index for next loop iteration (if looping)
-                self._resume_segment_index = 0
-                self._resume_covered_dist = 0.0
-
-                if not self.loop or self.stop_requested:
+                if self.stop_requested:
                     break
+
+                # All current segments are done.
+                if self.loop:
+                    # Loop: restart from the beginning
+                    self._dispatched_index = 0
+                    self._resume_segment_index = 0
+                    self._resume_covered_dist = 0.0
+                    logger.info(f"Walk gen={my_gen} looping back to start")
+                else:
+                    # Non-loop: stay idle but keep watching for new appended points.
+                    # We park here until either stop() is called or a new point
+                    # is appended (len grows beyond _dispatched_index).
+                    while not self.stop_requested:
+                        if len(self.points) > self._dispatched_index + 1:
+                            # New point(s) appended — resume from current head
+                            logger.info(
+                                f"Walk gen={my_gen}: new point(s) detected, continuing"
+                            )
+                            break
+                        time.sleep(0.3)
+
         except Exception as e:
             logger.error(f"Walk gen={my_gen} error: {e}")
         finally:
