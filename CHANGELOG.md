@@ -2,25 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-Release section format (required for CI release parsing):
-
-```md
-## [1.4.0] - 2026-03-28
-
-### Added
-- ...
-
-### Changed
-- ...
-
-### Fixed
-- ...
-```
-
-Notes:
-- Tag `v1.4.0` and `1.4.0` both map to section `[1.4.0]`.
-- CI will fail release creation if the matching version section is missing.
-
 ## [Unreleased]
 
 ## [1.4.0] - 2026-03-28

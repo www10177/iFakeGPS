@@ -52,3 +52,18 @@ This project uses `uv` for dependency management and execution.
         1.  Triggers `pymobiledevice3 mounter auto-mount` (via `auto_mount_developer_disk_image` helper) - required to make the menu appear on some devices.
         2.  Triggers `AmfiService.enable_developer_mode` - sends the command to the phone.
         3.  Shows a localized guide UI to the user.
+
+7.  **Release & Changelog Rules (CI Parsed)**:
+    *   Keep release-format instructions in this `AGENTS.md` (not in `CHANGELOG.md`).
+    *   For each release, add a section in `CHANGELOG.md` using this exact header style:
+        *   `## [X.Y.Z] - YYYY-MM-DD`
+    *   Recommended subsections:
+        *   `### Added`
+        *   `### Changed`
+        *   `### Fixed`
+    *   Tag mapping rule:
+        *   Use `X.Y.Z` tags only (for example `1.4.0`), not `vX.Y.Z`.
+        *   Tag must match changelog section `[X.Y.Z]` exactly.
+    *   CI behavior:
+        *   Release workflow parses `CHANGELOG.md` and publishes the matched section as the GitHub Release body.
+        *   If no matching section exists, release job must fail.

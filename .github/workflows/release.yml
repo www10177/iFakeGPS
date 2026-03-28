@@ -3,7 +3,6 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'
       - '*.*.*'
 
 jobs:
@@ -30,7 +29,7 @@ jobs:
         run: uv run python -m PyInstaller iFakeGPS.spec --clean
 
       - name: Extract Release Notes from CHANGELOG
-        run: uv run python scripts/extract_changelog.py "${{ github.ref_name }}"
+        run: uv run python extract_release_notes.py "${{ github.ref_name }}"
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
