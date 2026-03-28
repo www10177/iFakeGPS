@@ -23,6 +23,8 @@ Notes:
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-03-28
+
 ### Added
 - **Navigation Mode**: Added a new mode (`navigation`) which uses OSRM (or OpenRouteService, via settings) to plot actual road paths between waypoints.
 - **Saved Routes**: Added a new UI block in the sidebar to save, load, delete, import, and export GPS tracks (.gpx). Routes are persisted in the local SQLite cache database.
