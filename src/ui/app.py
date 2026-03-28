@@ -10,18 +10,20 @@ import customtkinter as ctk
 
 from src.core.device_manager import DeviceManager
 from src.core.models import DeviceInfo, RoutePoint
+from src.core.route_storage import RouteStorage
 from src.core.route_walker import RouteWalker
+from src.core.routing import RoutingError, RoutingService
 from src.core.tunnel_manager import TunneldManager
 from src.ui.caching_map_view import CachingTileMapView
 from src.ui.i18n import LANGUAGES, get_lang, set_lang, t
 from src.ui.tooltip import add_tooltip_button
 from src.utils.logger import logger
-from src.utils.notifier import notify
 
 
 class AppMode(Enum):
     SINGLE_POINT = "single"
     ROUTE = "route"
+    NAVIGATION = "navigation"
 
 
 class iFakeGPSApp(ctk.CTk):
@@ -65,12 +67,22 @@ class iFakeGPSApp(ctk.CTk):
         self.device_manager = DeviceManager()
         self.route_walker = RouteWalker(
             self.device_manager,
-            update_callback=self._on_position_update,
+            update_callback=self._on_walk_step,
             completion_callback=self._on_walk_complete,
         )
         # Note: RouteWalker constructor signature changed in our new core implementation
         # Reviewing core/route_walker.py: __init__(self, device_manager, update_callback, completion_callback=None)
         # So we pass callbacks in constructor now, simplified from property setters.
+
+        # Setup Database paths (shared by map cache and route storage)
+        local_app_data = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        self.cache_dir = os.path.join(local_app_data, "iFakeGPS", "cache")
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self.db_path = os.path.join(self.cache_dir, "map_cache.db")
+
+        # Initialize Routing & Storage
+        self.route_storage = RouteStorage(os.path.join(self.cache_dir, "routes.db"))
+        self.routing_service = RoutingService()
 
         # State
         self.mode = AppMode.SINGLE_POINT
@@ -407,11 +419,20 @@ class iFakeGPSApp(ctk.CTk):
             value="route",
             command=self._on_mode_change,
         )
-        route_radio.grid(row=2, column=0, padx=20, pady=(5, 10), sticky="w")
+        route_radio.grid(row=2, column=0, padx=20, pady=5, sticky="w")
+
+        nav_radio = ctk.CTkRadioButton(
+            mode_frame,
+            text=t("mode_navigation"),
+            variable=self.mode_var,
+            value="navigation",
+            command=self._on_mode_change,
+        )
+        nav_radio.grid(row=3, column=0, padx=20, pady=(5, 10), sticky="w")
 
         # Route controls
         self.route_frame = ctk.CTkFrame(sidebar)
-        self.route_frame.grid(row=6, column=0, padx=15, pady=10, sticky="ew")
+        self.route_frame.grid(row=6, column=0, padx=15, pady=5, sticky="ew")
 
         self.lbl_route = ctk.CTkLabel(
             self.route_frame,
@@ -508,8 +529,18 @@ class iFakeGPSApp(ctk.CTk):
         # Route buttons
         route_btn_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
         route_btn_frame.grid(
-            row=6, column=0, columnspan=2, padx=10, pady=10, sticky="ew"
+            row=6, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
         )
+
+        self.btn_calc_route = self.calc_route_btn = ctk.CTkButton(
+            route_btn_frame,
+            text=t("btn_calc_route"),
+            command=self._calculate_navigation_route,
+            fg_color="#3b82f6",
+            hover_color="#2563eb",
+            width=80,
+        )
+        self.calc_route_btn.pack(side="left", expand=True, fill="x", padx=1)
 
         # Note: We need to assign these to self for update_ui_text
         self.btn_start_walk = self.start_walk_btn = ctk.CTkButton(
@@ -520,7 +551,7 @@ class iFakeGPSApp(ctk.CTk):
             hover_color="#059669",
             width=80,
         )
-        self.start_walk_btn.pack(side="left", expand=True, fill="x", padx=2)
+        self.start_walk_btn.pack(side="left", expand=True, fill="x", padx=1)
 
         self.pause_walk_btn = ctk.CTkButton(
             route_btn_frame,
@@ -560,33 +591,125 @@ class iFakeGPSApp(ctk.CTk):
             hover_color="#4b5563",
         )
         self.clear_route_btn.grid(
-            row=8, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew"
+            row=8, column=0, columnspan=2, padx=10, pady=(0, 5), sticky="ew"
         )
+
+        # --- Route Storage & Settings Frame ---
+        self.storage_settings_frame = ctk.CTkFrame(sidebar)
+        self.storage_settings_frame.grid(row=7, column=0, padx=15, pady=5, sticky="ew")
+
+        # Tabs for Storage and Routing Engine
+        self.rt_tabview = ctk.CTkTabview(self.storage_settings_frame, height=140)
+        self.rt_tabview.pack(fill="both", expand=True, padx=5, pady=5)
+        self.rt_tabview.add("Storage")
+        self.rt_tabview.add("Routing")
+
+        # 1. Storage Tab
+        tab_storage = self.rt_tabview.tab("Storage")
+        tab_storage.grid_columnconfigure((0, 1), weight=1)
+
+        self.btn_save_route = ctk.CTkButton(
+            tab_storage,
+            text=t("btn_save_route"),
+            command=self._save_route_dialog,
+            width=80,
+        )
+        self.btn_save_route.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
+        self.btn_load_route = ctk.CTkButton(
+            tab_storage,
+            text=t("btn_load_route"),
+            command=self._load_route_dialog,
+            width=80,
+        )
+        self.btn_load_route.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
+        self.btn_import_gpx = ctk.CTkButton(
+            tab_storage,
+            text=t("btn_import_gpx"),
+            command=self._import_gpx_dialog,
+            width=80,
+            fg_color="#6b7280",
+            hover_color="#4b5563",
+        )
+        self.btn_import_gpx.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+
+        self.btn_export_gpx = ctk.CTkButton(
+            tab_storage,
+            text=t("btn_export_gpx"),
+            command=self._export_gpx_dialog,
+            width=80,
+            fg_color="#6b7280",
+            hover_color="#4b5563",
+        )
+        self.btn_export_gpx.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+
+        # 2. Routing Engine Tab
+        tab_routing = self.rt_tabview.tab("Routing")
+        tab_routing.grid_columnconfigure(1, weight=1)
+
+        self.provider_var = ctk.StringVar(value=self.routing_service.provider)
+
+        self.rad_osrm = ctk.CTkRadioButton(
+            tab_routing,
+            text=t("provider_osrm"),
+            variable=self.provider_var,
+            value="osrm",
+            command=self._apply_routing_settings,
+        )
+        self.rad_osrm.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
+        self.rad_ors = ctk.CTkRadioButton(
+            tab_routing,
+            text=t("provider_ors"),
+            variable=self.provider_var,
+            value="ors",
+            command=self._apply_routing_settings,
+        )
+        self.rad_ors.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
+        self.ors_key_entry = ctk.CTkEntry(
+            tab_routing, placeholder_text=t("api_key_placeholder"), width=150, height=24
+        )
+        self.ors_key_entry.grid(
+            row=2, column=0, columnspan=2, padx=25, pady=(0, 5), sticky="ew"
+        )
+        self.ors_key_entry.insert(0, self.routing_service.api_key)
+        self.ors_key_entry.bind("<FocusOut>", lambda e: self._apply_routing_settings())
+        self.ors_key_entry.bind("<Return>", lambda e: self._apply_routing_settings())
 
         # Coordinates section
         self.coord_frame = ctk.CTkFrame(sidebar)
-        self.coord_frame.grid(row=7, column=0, padx=15, pady=10, sticky="ew")
+        self.coord_frame.grid(row=8, column=0, padx=15, pady=5, sticky="ew")
 
         self.lbl_manual = ctk.CTkLabel(
             self.coord_frame,
             text=t("manual_coords"),
-            font=ctk.CTkFont(size=16, weight="bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
         )
         self.lbl_manual.grid(
-            row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w"
+            row=0, column=0, columnspan=2, padx=10, pady=(5, 5), sticky="w"
         )
 
-        self.lbl_lat = ctk.CTkLabel(self.coord_frame, text=t("label_lat"))
-        self.lbl_lat.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.lbl_lat = ctk.CTkLabel(
+            self.coord_frame, text=t("label_lat"), font=ctk.CTkFont(size=11)
+        )
+        self.lbl_lat.grid(row=1, column=0, padx=10, pady=2, sticky="w")
 
-        self.lat_entry = ctk.CTkEntry(self.coord_frame, placeholder_text="37.7749")
-        self.lat_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+        self.lat_entry = ctk.CTkEntry(
+            self.coord_frame, placeholder_text="37.7749", height=24
+        )
+        self.lat_entry.grid(row=1, column=1, padx=10, pady=2, sticky="ew")
 
-        self.lbl_lon = ctk.CTkLabel(self.coord_frame, text=t("label_lon"))
+        self.lbl_lon = ctk.CTkLabel(
+            self.coord_frame, text=t("label_lon"), font=ctk.CTkFont(size=11)
+        )
         self.lbl_lon.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
-        self.lon_entry = ctk.CTkEntry(self.coord_frame, placeholder_text="-122.4194")
-        self.lon_entry.grid(row=2, column=1, padx=10, pady=5, sticky="ew")
+        self.lon_entry = ctk.CTkEntry(
+            self.coord_frame, placeholder_text="-122.4194", height=24
+        )
+        self.lon_entry.grid(row=2, column=1, padx=10, pady=2, sticky="ew")
 
         self.coord_frame.grid_columnconfigure(1, weight=1)
 
@@ -661,13 +784,7 @@ class iFakeGPSApp(ctk.CTk):
         map_frame.grid_columnconfigure(0, weight=1)
         map_frame.grid_rowconfigure(0, weight=1)
 
-        # Set up a dedicated directory in the user's AppData for database caching
-        import os
-
-        local_app_data = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-        cache_dir = os.path.join(local_app_data, "iFakeGPS", "cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        db_path = os.path.join(cache_dir, "map_cache.db")
+        # map_cache.db path is already established in self.db_path
 
         # Create map widget using write-through caching subclass.
         # Tiles downloaded from the network are automatically saved to the local SQLite DB
@@ -676,7 +793,7 @@ class iFakeGPSApp(ctk.CTk):
             map_frame,
             corner_radius=10,
             use_database_only=False,
-            db_path=db_path,
+            db_path=self.db_path,
         )
         self.map_widget.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
@@ -1041,13 +1158,19 @@ class iFakeGPSApp(ctk.CTk):
 
     def _on_mode_change(self):
         """Handle mode change."""
-        self.mode = (
-            AppMode.SINGLE_POINT if self.mode_var.get() == "single" else AppMode.ROUTE
-        )
+        mode_str = self.mode_var.get()
+        if mode_str == "single":
+            self.mode = AppMode.SINGLE_POINT
+        elif mode_str == "navigation":
+            self.mode = AppMode.NAVIGATION
+        else:
+            self.mode = AppMode.ROUTE
 
         if self.mode == AppMode.SINGLE_POINT:
             if hasattr(self, "route_frame"):
                 self.route_frame.grid_remove()
+            if hasattr(self, "storage_settings_frame"):
+                self.storage_settings_frame.grid_remove()
             if hasattr(self, "coord_frame"):
                 self.coord_frame.grid()
             self.status_label.configure(text=t("status_single_mode"))
@@ -1056,7 +1179,15 @@ class iFakeGPSApp(ctk.CTk):
                 self.coord_frame.grid_remove()
             if hasattr(self, "route_frame"):
                 self.route_frame.grid()
-            self.status_label.configure(text=t("status_route_mode"))
+            if hasattr(self, "storage_settings_frame"):
+                self.storage_settings_frame.grid()
+
+            if self.mode == AppMode.NAVIGATION:
+                self.status_label.configure(text=t("status_nav_mode"))
+                self.calc_route_btn.pack(side="left", expand=True, fill="x", padx=1)
+            else:
+                self.status_label.configure(text=t("status_route_mode"))
+                self.calc_route_btn.pack_forget()
 
     def _on_map_click(self, coords):
         """Handle map click."""
@@ -1074,7 +1205,7 @@ class iFakeGPSApp(ctk.CTk):
             self._pending_teleport = (lat, lon)
             self._show_teleport_confirmation(lat, lon)
         else:
-            # Route mode - add waypoint
+            # Route and Navigation mode - add waypoint
             self._add_route_point(lat, lon)
 
     def _show_teleport_confirmation(self, lat: float, lon: float):
@@ -1291,6 +1422,245 @@ class iFakeGPSApp(ctk.CTk):
         self.speed_entry_var.set(f"{speed_kmh:.1f}")
         self.route_walker.set_speed(speed_kmh)
 
+    def _apply_routing_settings(self):
+        """Update routing service config."""
+        provider = self.provider_var.get()
+        api_key = self.ors_key_entry.get().strip()
+        self.routing_service = RoutingService(provider=provider, api_key=api_key)
+
+    def _calculate_navigation_route(self):
+        """Fetch route from OSRM/ORS using the added markers."""
+        if len(self.route_points) < 2:
+            messagebox.showinfo("Wait", "Please add at least 2 waypoints.")
+            return
+
+        self.status_label.configure(text=t("status_calculating_route"))
+
+        # We need the user-placed waypoints as tuples
+        waypoints = [(p.latitude, p.longitude) for p in self.route_points]
+
+        def fetch_task():
+            try:
+                # OSRM/ORS returns a dense list of RoutePoints following roads
+                dense_points = self.routing_service.get_route(
+                    waypoints, profile="driving"
+                )
+                self.after(0, lambda: self._on_navigation_route_success(dense_points))
+            except RoutingError as e:
+                self.after(0, lambda msg=str(e): self._on_navigation_route_fail(msg))
+            except Exception as e:
+                self.after(
+                    0,
+                    lambda msg=f"Unexpected error: {e}": self._on_navigation_route_fail(
+                        msg
+                    ),
+                )
+
+        threading.Thread(target=fetch_task, daemon=True).start()
+
+    def _on_navigation_route_success(self, dense_points: list[RoutePoint]):
+        """Replace the current route points with the calculated dense road path."""
+        # 1. Clear old markers (or we can keep them visually, but let's replace them for walk logic)
+        for p in self.route_points:
+            if p.marker:
+                p.marker.delete()
+
+        self.route_points = []
+
+        # 2. Add start/end marker for visual cue, but the path is dense
+        if dense_points:
+            dense_points[0].marker = self.map_widget.set_marker(
+                dense_points[0].latitude,
+                dense_points[0].longitude,
+                text="Start",
+                marker_color_circle="#10b981",
+            )
+            dense_points[-1].marker = self.map_widget.set_marker(
+                dense_points[-1].latitude,
+                dense_points[-1].longitude,
+                text="End",
+                marker_color_circle="#ef4444",
+            )
+
+        self.route_points = dense_points
+        self._update_route_path()
+        self._update_route_info()
+        self.status_label.configure(text=t("status_calc_success"))
+
+    def _on_navigation_route_fail(self, msg: str):
+        self.status_label.configure(text=t("status_calc_failed", error=msg))
+        messagebox.showerror("Routing Error", msg)
+
+    # -------------------------------------------------------------
+    # Route Storage and GPX
+    # -------------------------------------------------------------
+
+    def _save_route_dialog(self):
+        if not self.route_points:
+            return
+        name = ctk.CTkInputDialog(
+            text=t("dialog_save_msg"), title=t("dialog_save_title")
+        ).get_input()
+        if name:
+            self.route_storage.save(name, self.route_points)
+            messagebox.showinfo("Saved", f"Route '{name}' successfully saved.")
+
+    def _load_route_dialog(self):
+        routes = self.route_storage.list_all()
+        if not routes:
+            messagebox.showinfo("Info", "No saved routes found.")
+            return
+
+        # Simple Tkinter listbox window for selection (CTk doesn't have a simple listbox popup)
+        import tkinter as tk
+        from tkinter import Toplevel
+
+        top = Toplevel(self)
+        top.title(t("dialog_load_title"))
+        top.geometry("400x300")
+        top.transient(self)
+        top.grab_set()
+
+        ctk.CTkLabel(top, text=t("dialog_load_msg")).pack(pady=5)
+
+        listbox = tk.Listbox(top, font=("Segoe UI", 11))
+        listbox.pack(fill="both", expand=True, padx=10, pady=5)
+
+        for r in routes:
+            listbox.insert(
+                "end", f"{r.name} ({r.point_count} pts) - {r.created_at[:16]}"
+            )
+
+        def on_load():
+            sel = listbox.curselection()
+            if not sel:
+                return
+            route_id = routes[sel[0]].id
+            name, points = self.route_storage.load(route_id)
+            self._clear_route()
+
+            # Put them on map (won't add markers for every point if it's large, just start/end)
+            if len(points) > 50:
+                points[0].marker = self.map_widget.set_marker(
+                    points[0].latitude,
+                    points[0].longitude,
+                    text="Start",
+                    marker_color_circle="#10b981",
+                )
+                points[-1].marker = self.map_widget.set_marker(
+                    points[-1].latitude,
+                    points[-1].longitude,
+                    text="End",
+                    marker_color_circle="#ef4444",
+                )
+            else:
+                for i, p in enumerate(points):
+                    p.marker = self.map_widget.set_marker(
+                        p.latitude,
+                        p.longitude,
+                        text=f"P{i + 1}",
+                        marker_color_circle="#3b82f6",
+                    )
+
+            self.route_points = points
+            self._update_route_path()
+            self._update_route_info()
+
+            # Center map on start
+            if points:
+                self.map_widget.set_position(points[0].latitude, points[0].longitude)
+
+            top.destroy()
+            self.status_label.configure(text=f"Loaded route: {name}")
+
+        def on_delete(event):
+            sel = listbox.curselection()
+            if not sel:
+                return
+            idx = sel[0]
+            if messagebox.askyesno("Delete", f"Delete '{routes[idx].name}'?"):
+                self.route_storage.delete(routes[idx].id)
+                listbox.delete(idx)
+                routes.pop(idx)
+
+        btn_frm = ctk.CTkFrame(top, fg_color="transparent")
+        btn_frm.pack(pady=10)
+        ctk.CTkButton(btn_frm, text=t("btn_load_route"), command=on_load).pack(
+            side="left", padx=5
+        )
+
+        listbox.bind("<Double-Button-1>", lambda e: on_load())
+        listbox.bind("<Button-3>", on_delete)
+
+    def _export_gpx_dialog(self):
+        if not self.route_points:
+            return
+        from tkinter import filedialog
+
+        path = filedialog.asksaveasfilename(
+            defaultextension=".gpx", filetypes=[("GPX Files", "*.gpx")]
+        )
+        if path:
+            import gpxpy.gpx
+
+            gpx = gpxpy.gpx.GPX()
+            gpx_track = gpxpy.gpx.GPXTrack(name="Exported Route")
+            gpx.tracks.append(gpx_track)
+            gpx_segment = gpxpy.gpx.GPXTrackSegment()
+            gpx_track.segments.append(gpx_segment)
+            for p in self.route_points:
+                gpx_segment.points.append(
+                    gpxpy.gpx.GPXTrackPoint(p.latitude, p.longitude)
+                )
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(gpx.to_xml())
+            messagebox.showinfo("Exported", f"Saved to {path}")
+
+    def _import_gpx_dialog(self):
+        from tkinter import filedialog
+
+        path = filedialog.askopenfilename(filetypes=[("GPX Files", "*.gpx")])
+        if path:
+            try:
+                # Use the new helper which also parses
+                _, name, points = self.route_storage.import_gpx(path, save_to_db=False)
+                self._clear_route()
+
+                if len(points) > 50:
+                    points[0].marker = self.map_widget.set_marker(
+                        points[0].latitude,
+                        points[0].longitude,
+                        text="Start",
+                        marker_color_circle="#10b981",
+                    )
+                    points[-1].marker = self.map_widget.set_marker(
+                        points[-1].latitude,
+                        points[-1].longitude,
+                        text="End",
+                        marker_color_circle="#ef4444",
+                    )
+                else:
+                    for i, p in enumerate(points):
+                        p.marker = self.map_widget.set_marker(
+                            p.latitude,
+                            p.longitude,
+                            text=f"P{i + 1}",
+                            marker_color_circle="#3b82f6",
+                        )
+
+                self.route_points = points
+                self._update_route_path()
+                self._update_route_info()
+                if points:
+                    self.map_widget.set_position(
+                        points[0].latitude, points[0].longitude
+                    )
+                self.status_label.configure(
+                    text=f"GPX Loaded: {name} ({len(points)} pts)"
+                )
+            except Exception as e:
+                messagebox.showerror("GPX Error", f"Failed to import GPX:\n{e}")
+
     def _on_speed_entry_change(self, event=None):
         """Handle speed entry change."""
         try:
@@ -1301,103 +1671,116 @@ class iFakeGPSApp(ctk.CTk):
                 val = 1000.0
             self.speed_slider.set(val)
             self.route_walker.set_speed(val)
-            # Update UI to clean formatting
             self.speed_entry_var.set(f"{val:.1f}")
         except ValueError:
-            # Revert to slider value if invalid input
             self.speed_entry_var.set(f"{self.speed_slider.get():.1f}")
-
-        # Remove focus from entry
         self.focus_set()
+
+    def _on_noise_change(self, value):
+        """Handle noise slider change."""
+        noise_pct = float(value)
+        self.noise_value_label.configure(text=f"{noise_pct:.0f}%")
+        self.route_walker.set_noise(noise_pct)
+
+    def _start_walking(self):
+        """Start or resume walking the route."""
+        if len(self.route_points) < 2:
+            return
+
+        if self.route_walker.is_active and not self.route_walker.is_paused:
+            return
+
+        # Initialize the walker with the current points list if not active
+        if not self.route_walker.is_active:
+            # Tell the walker to start from the beginning
+            self.route_walker.start(
+                self.route_points,
+                loop=self.loop_var.get(),
+            )
+            self.status_label.configure(text=t("status_walking"))
+        elif self.route_walker.is_paused:
+            self.route_walker.resume()
+            self.status_label.configure(text=t("status_resumed"))
+
+        # Update button states
+        self.start_walk_btn.configure(state="disabled")
+        self.pause_walk_btn.configure(state="normal")
+        self.stop_walk_btn.configure(state="normal")
+
+    def _pause_walking(self):
+        """Pause the active route walk."""
+        if self.route_walker.is_active and not self.route_walker.is_paused:
+            self.route_walker.pause()
+            self.status_label.configure(text=t("status_paused"))
+
+            # Update button states
+            self.start_walk_btn.configure(state="normal")
+            self.pause_walk_btn.configure(state="disabled")
+
+    def _stop_walking(self):
+        """Stop walking the route completely."""
+        self.route_walker.stop()
+        self.status_label.configure(text=t("status_walk_stopped"))
+
+        # Reset walker state visually (optional, depending on desired UX)
+        # Here we just re-enable Start and disable Pause/Stop
+        self.start_walk_btn.configure(state="normal")
+        self.pause_walk_btn.configure(state="disabled")
+        self.stop_walk_btn.configure(state="disabled")
+
+    def _on_walk_step(self, lat: float, lon: float):
+        """Callback from RouteWalker when location is updated."""
+        # This is typically called from a background thread, but Tkinter allows
+        # Some basic variable updates. We use after() where safe.
+        self.after(0, lambda: self._update_walk_ui(lat, lon))
+
+    def _update_walk_ui(self, lat: float, lon: float):
+        """Safely update UI with new walk coordinates."""
+        # Update current position marker
+        if self.current_position_marker:
+            self.current_position_marker.set_position(lat, lon)
+        else:
+            self.current_position_marker = self.map_widget.set_marker(
+                lat,
+                lon,
+                text=t("marker_current_location"),
+                marker_color_circle="#ef4444",
+                marker_color_outside="#b91c1c",
+            )
+        # Center map on walker
+        self.map_widget.set_position(lat, lon)
+
+    def _on_walk_complete(self):
+        """Callback from RouteWalker when the route is fully completed."""
+        self.after(0, self._handle_walk_complete_ui)
+
+    def _handle_walk_complete_ui(self):
+        """Handle the UI updates when a walk finishes (non-loop mode)."""
+        self.status_label.configure(text=t("status_walk_complete"))
+        self.start_walk_btn.configure(state="normal")
+        self.pause_walk_btn.configure(state="disabled")
+        self.stop_walk_btn.configure(state="disabled")
+
+        # Use our new notifier utility to show a Toast or simple dialog
+        import src.utils.notifier as notifier
+
+        notifier.show_notification(
+            title=t("notify_walk_complete_title"),
+            message=t("notify_walk_complete_body"),
+        )
+        # Use our new notifier utility to show a Toast or simple dialog
+        import src.utils.notifier as notifier
+
+        notifier.show_notification(
+            title=t("notify_walk_complete_title"),
+            message=t("notify_walk_complete_body"),
+        )
 
     def _on_noise_change(self, value):
         """Handle noise slider change."""
         noise_percent = float(value)
         self.noise_value_label.configure(text=f"{noise_percent:.0f}%")
         self.route_walker.set_speed_noise(noise_percent)
-
-    def _start_walking(self):
-        """Start or resume walking the route."""
-        if not self.device_manager.connected:
-            messagebox.showwarning(
-                t("dialog_not_connected_title"), t("dialog_not_connected_msg")
-            )
-            return
-
-        if len(self.route_points) < 2:
-            messagebox.showwarning(
-                t("dialog_invalid_route_title"), t("dialog_invalid_route_msg")
-            )
-            return
-
-        # If currently paused, resume from the saved position
-        if self.route_walker.is_walking and self.route_walker.is_paused:
-            self.route_walker.resume()
-            self.status_label.configure(text=t("status_resumed"))
-            return
-
-        # Otherwise, start fresh from the beginning
-        self.route_walker.set_route(self.route_points)
-        self.route_walker.set_loop(self.loop_var.get())
-        self.route_walker.start()
-        self.status_label.configure(text=t("status_walking"))
-
-    def _pause_walking(self):
-        """Pause walking at the current position (can be resumed with ▶)."""
-        if self.route_walker.is_walking and not self.route_walker.is_paused:
-            self.route_walker.pause()
-            self.status_label.configure(text=t("status_paused"))
-        elif not self.route_walker.is_walking:
-            self.status_label.configure(text=t("status_not_walking"))
-
-    def _stop_walking(self):
-        """Stop walking."""
-        self.route_walker.stop()
-
-        # Remove current position marker
-        if self.current_position_marker:
-            self.current_position_marker.delete()
-            self.current_position_marker = None
-
-        self.status_label.configure(text=t("status_walk_stopped"))
-
-    def _on_position_update(self, lat: float, lon: float):
-        """Called when walking position updates."""
-
-        def update():
-            # Discard stale callbacks that arrive after stop() was called.
-            # Because stop() is non-blocking, the old thread may fire one last
-            # update before it notices stop_requested — ignore it.
-            if not self.route_walker.is_walking:
-                return
-
-            # Update or create position marker
-            if self.current_position_marker:
-                self.current_position_marker.delete()
-
-            self.current_position_marker = self.map_widget.set_marker(
-                lat,
-                lon,
-                text="🚶",
-                marker_color_circle="#10b981",
-                marker_color_outside="#059669",
-            )
-
-            self.coords_label.configure(text=f"Walking: {lat:.6f}, {lon:.6f}")
-
-        self.after(0, update)
-
-    def _on_walk_complete(self):
-        """Called when walking is complete."""
-
-        def update():
-            self.status_label.configure(text=t("status_walk_complete"))
-            notify(
-                title=t("notify_walk_complete_title"),
-                message=t("notify_walk_complete_body"),
-            )
-
-        self.after(0, update)
 
     def _set_manual_location(self):
         """Set location from manual coordinates."""

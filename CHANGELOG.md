@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Navigation Mode**: Added a new mode (`navigation`) which uses OSRM (or OpenRouteService, via settings) to plot actual road paths between waypoints.
+- **Saved Routes**: Added a new UI block in the sidebar to save, load, delete, import, and export GPS tracks (.gpx). Routes are persisted in the local SQLite cache database.
+- **Walk Notification**: The app now utilizes modern Windows Toast Notifications (falling back to simple dialogs) to silently inform the user when a simulated walk has reached the final destination.
+
 ### Changed
 - **Dynamic Append-only Route**: The route walker now holds a live reference to the UI's waypoint list instead of a snapshot taken at start time. New flags/waypoints added on the map while walking is active are automatically appended to the end of the current route and walked in sequence — no restart required. In non-loop mode the walker idles after exhausting all current waypoints and resumes as soon as new ones are added.
 
