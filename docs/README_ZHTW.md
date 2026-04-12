@@ -90,6 +90,12 @@
 2. 檢查 Windows 防火牆是否允許 Python/iFakeGPS
 3. 確保系統已啟用 IPv6
 
+### 錯誤回報與 Log
+若遇到錯誤，回報 issue 時請附上 log 檔案。
+1. 在 App 側邊欄點擊 `開啟 Log 資料夾`
+2. 附上 `%LOCALAPPDATA%\iFakeGPS\logs\ifakegps.log`
+3. 說明錯誤發生前你做了哪些操作
+
 ---
 
 ## 👨‍💻 開發者專區

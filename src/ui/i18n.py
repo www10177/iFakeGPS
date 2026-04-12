@@ -113,6 +113,7 @@ _STRINGS["en"] = {
     "label_lon": "Longitude:",
     "btn_teleport": "✈ Teleport",
     "btn_clear_location": "🔄 Clear Simulated Location",
+    "btn_open_logs": "📂 Open Logs Folder",
     # --- Info label ---
     "info_tunneld": "💡 Start tunneld first (as admin):\npymobiledevice3 remote tunneld",
     # --- Status bar ---
@@ -142,6 +143,7 @@ _STRINGS["en"] = {
     "status_clearing_location": "Clearing location simulation...",
     "status_location_cleared": "✅ Location simulation cleared.",
     "status_location_clear_failed": "❌ Failed to clear location.",
+    "status_opened_logs": "Opened log folder: {path}",
     "status_device_not_connected": "⚠️ Device not connected. Connect first.",
     # --- Tunneld status ---
     "status_checking_tunneld": "🔄 Checking tunneld service...",
@@ -164,6 +166,8 @@ _STRINGS["en"] = {
     "dialog_invalid_route_msg": "Please add at least 2 points to the route.",
     "dialog_invalid_coords_title": "Invalid Coordinates",
     "dialog_invalid_coords_msg": "Please enter valid latitude (-90 to 90) and longitude (-180 to 180).",
+    "dialog_log_open_failed_title": "Cannot Open Log Folder",
+    "dialog_log_open_failed_msg": "Failed to open log folder:\n{error}",
     "dialog_enable_dev_title": "Enable Developer Mode",
     "dialog_enable_dev_msg": (
         "This command will trigger 'Enable Developer Mode' on the connected device.\n\n"
@@ -306,6 +310,7 @@ _STRINGS["zh_TW"] = {
     "label_lon": "經度：",
     "btn_teleport": "✈ 瞬間移動",
     "btn_clear_location": "🔄 清除模擬定位",
+    "btn_open_logs": "📂 開啟 Log 資料夾",
     # --- Info label ---
     "info_tunneld": "💡 請先以管理員身分啟動 tunneld：\npymobiledevice3 remote tunneld",
     # --- Status bar ---
@@ -335,6 +340,7 @@ _STRINGS["zh_TW"] = {
     "status_clearing_location": "正在清除模擬定位...",
     "status_location_cleared": "✅ 模擬定位已清除。",
     "status_location_clear_failed": "❌ 清除定位失敗。",
+    "status_opened_logs": "已開啟 Log 資料夾：{path}",
     "status_device_not_connected": "⚠️ 裝置未連線，請先連線。",
     # --- Tunneld status ---
     "status_checking_tunneld": "🔄 正在檢查 tunneld 服務...",
@@ -357,6 +363,8 @@ _STRINGS["zh_TW"] = {
     "dialog_invalid_route_msg": "請至少新增 2 個路線點。",
     "dialog_invalid_coords_title": "座標無效",
     "dialog_invalid_coords_msg": "請輸入有效的緯度（-90 到 90）和經度（-180 到 180）。",
+    "dialog_log_open_failed_title": "無法開啟 Log 資料夾",
+    "dialog_log_open_failed_msg": "開啟 Log 資料夾失敗：\n{error}",
     "dialog_enable_dev_title": "啟用開發者模式",
     "dialog_enable_dev_msg": (
         "此操作將在已連接的裝置上觸發「啟用開發者模式」。\n\n"

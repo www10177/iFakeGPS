@@ -71,6 +71,12 @@ The app automatically manages the tunnel service. If you have issues:
 2. Check Windows Firewall allows Python/iFakeGPS
 3. Ensure IPv6 is enabled on your system
 
+### Bug Reports and Logs
+If you hit an error, please include the log file when reporting an issue.
+1. Open the app sidebar and click `Open Logs Folder`
+2. Attach `%LOCALAPPDATA%\iFakeGPS\logs\ifakegps.log`
+3. Include what action you performed before the issue happened
+
 ---
 
 ## 👨‍💻 For Developers

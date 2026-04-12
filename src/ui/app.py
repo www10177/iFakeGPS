@@ -17,7 +17,7 @@ from src.core.tunnel_manager import TunneldManager
 from src.ui.caching_map_view import CachingTileMapView
 from src.ui.i18n import LANGUAGES, get_lang, set_lang, t
 from src.ui.tooltip import add_tooltip_button
-from src.utils.logger import logger
+from src.utils.logger import get_log_dir, logger
 
 
 class AppMode(Enum):
@@ -273,7 +273,7 @@ class iFakeGPSApp(ctk.CTk):
         """Create the left sidebar with controls."""
         sidebar = ctk.CTkFrame(self, width=350, corner_radius=0)
         sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew")
-        sidebar.grid_rowconfigure(10, weight=1)
+        sidebar.grid_rowconfigure(11, weight=1)
 
         # App title
         title_label = ctk.CTkLabel(
@@ -742,9 +742,20 @@ class iFakeGPSApp(ctk.CTk):
             row=9, column=0, padx=15, pady=(5, 5), sticky="ew"
         )
 
+        # Open logs folder button
+        self.open_logs_btn = ctk.CTkButton(
+            sidebar,
+            text=t("btn_open_logs"),
+            command=self._open_logs_folder,
+            fg_color="#374151",
+            hover_color="#4b5563",
+            height=30,
+        )
+        self.open_logs_btn.grid(row=10, column=0, padx=15, pady=(0, 5), sticky="ew")
+
         # Spacer
         spacer = ctk.CTkLabel(sidebar, text="")
-        spacer.grid(row=10, column=0, sticky="nsew")
+        spacer.grid(row=11, column=0, sticky="nsew")
 
         # Info label at bottom
         info_label = ctk.CTkLabel(
@@ -755,11 +766,11 @@ class iFakeGPSApp(ctk.CTk):
             justify="left",
         )
         self.info_label = info_label
-        info_label.grid(row=11, column=0, padx=15, pady=(5, 5), sticky="sw")
+        info_label.grid(row=12, column=0, padx=15, pady=(5, 5), sticky="sw")
 
         # Language selector
         lang_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        lang_frame.grid(row=12, column=0, padx=15, pady=(0, 15), sticky="sw")
+        lang_frame.grid(row=13, column=0, padx=15, pady=(0, 15), sticky="sw")
 
         self.lang_label = ctk.CTkLabel(
             lang_frame, text=t("lang_label"), font=ctk.CTkFont(size=11)
@@ -981,6 +992,8 @@ class iFakeGPSApp(ctk.CTk):
             self.btn_teleport.configure(text=t("btn_teleport"))
         if hasattr(self, "clear_location_btn"):
             self.clear_location_btn.configure(text=t("btn_clear_location"))
+        if hasattr(self, "open_logs_btn"):
+            self.open_logs_btn.configure(text=t("btn_open_logs"))
 
         # Info label
         if hasattr(self, "info_label"):
@@ -1882,6 +1895,25 @@ class iFakeGPSApp(ctk.CTk):
                 self.current_position_marker = None
         else:
             self.status_label.configure(text=t("status_location_clear_failed"))
+
+    def _open_logs_folder(self):
+        """Open the log directory for troubleshooting."""
+        try:
+            log_dir = str(get_log_dir())
+            if sys.platform == "win32":
+                os.startfile(log_dir)
+            else:
+                import subprocess
+
+                opener = "open" if sys.platform == "darwin" else "xdg-open"
+                subprocess.call([opener, log_dir])
+            self.status_label.configure(text=t("status_opened_logs", path=log_dir))
+        except Exception as e:
+            logger.error("Failed to open log folder: %s", e, exc_info=True)
+            messagebox.showerror(
+                t("dialog_log_open_failed_title"),
+                t("dialog_log_open_failed_msg", error=e),
+            )
 
     def _search_location(self, event=None):
         """Search for a location using Nominatim geocoding."""
