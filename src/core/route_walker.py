@@ -25,10 +25,12 @@ class RouteWalker:
         device_manager: DeviceManager,
         update_callback: Callable[[float, float], None],
         completion_callback: Optional[Callable[[], None]] = None,
+        batch_completion_callback: Optional[Callable[[], None]] = None,
     ):
         self.device_manager = device_manager
         self.update_callback = update_callback
         self.completion_callback = completion_callback
+        self.batch_completion_callback = batch_completion_callback
         self.points: list[RoutePoint] = []
         self.is_walking = False
         self.is_paused = False
@@ -48,6 +50,7 @@ class RouteWalker:
         # Resume state: track where we left off
         self._resume_segment_index: int = 0  # which segment to continue from
         self._resume_covered_dist: float = 0.0  # how far into that segment (km)
+        self._last_batch_completed_index: int = -1
 
     def set_route(self, points: list[RoutePoint]):
         """Set the route points to walk.
@@ -104,6 +107,7 @@ class RouteWalker:
         self._resume_segment_index = 0
         self._resume_covered_dist = 0.0
         self._dispatched_index = 0  # next point index to start a segment FROM
+        self._last_batch_completed_index = -1
 
         self.is_walking = True
         self.thread = threading.Thread(
@@ -122,6 +126,7 @@ class RouteWalker:
         self._resume_segment_index = 0
         self._resume_covered_dist = 0.0
         self._dispatched_index = 0
+        self._last_batch_completed_index = -1
         logger.info("RouteWalker stop signalled")
 
     def _walk_loop(self, my_gen: int):
@@ -186,6 +191,16 @@ class RouteWalker:
                     self._resume_covered_dist = 0.0
                     logger.info(f"Walk gen={my_gen} looping back to start")
                 else:
+                    # We completed the currently available route batch.
+                    # Fire exactly once per consumed head index so UI can notify.
+                    if (
+                        self.batch_completion_callback
+                        and self._dispatched_index > 0
+                        and self._dispatched_index != self._last_batch_completed_index
+                    ):
+                        self._last_batch_completed_index = self._dispatched_index
+                        self.batch_completion_callback()
+
                     # Non-loop: stay idle but keep watching for new appended points.
                     # We park here until either stop() is called or a new point
                     # is appended (len grows beyond _dispatched_index).

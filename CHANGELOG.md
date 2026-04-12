@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **關閉自動清除定位**：關閉 iFakeGPS 視窗時，若裝置仍連線，會先自動嘗試清除模擬定位再退出。
+- **清除按鈕跨模式可見**：將「清除模擬定位」改為側邊欄獨立按鈕，在單點、路線、導航模式都可直接使用。
+
 ## [1.4.1] - 2026-03-28
 
 ### Changed

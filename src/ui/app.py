@@ -68,7 +68,8 @@ class iFakeGPSApp(ctk.CTk):
         self.route_walker = RouteWalker(
             self.device_manager,
             update_callback=self._on_walk_step,
-            completion_callback=self._on_walk_complete,
+            completion_callback=self._on_walk_session_end,
+            batch_completion_callback=self._on_walk_batch_complete,
         )
         # Note: RouteWalker constructor signature changed in our new core implementation
         # Reviewing core/route_walker.py: __init__(self, device_manager, update_callback, completion_callback=None)
@@ -728,16 +729,17 @@ class iFakeGPSApp(ctk.CTk):
             row=3, column=0, columnspan=2, padx=10, pady=10, sticky="ew"
         )
 
-        # Clear location button
+        # Global clear-location button (always visible across modes)
         self.clear_location_btn = ctk.CTkButton(
-            self.coord_frame,
+            sidebar,
             text=t("btn_clear_location"),
             command=self._clear_location,
             fg_color="#6b7280",
             hover_color="#4b5563",
+            height=30,
         )
         self.clear_location_btn.grid(
-            row=4, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew"
+            row=9, column=0, padx=15, pady=(5, 5), sticky="ew"
         )
 
         # Spacer
@@ -1809,24 +1811,31 @@ class iFakeGPSApp(ctk.CTk):
         # Center map on walker
         self.map_widget.set_position(lat, lon)
 
-    def _on_walk_complete(self):
-        """Callback from RouteWalker when the route is fully completed."""
-        self.after(0, self._handle_walk_complete_ui)
+    def _on_walk_batch_complete(self):
+        """Callback when current route batch is consumed (append-only still active)."""
+        self.after(0, self._handle_walk_batch_complete_ui)
 
-    def _handle_walk_complete_ui(self):
-        """Handle the UI updates when a walk finishes (non-loop mode)."""
+    def _handle_walk_batch_complete_ui(self):
+        """Show completion status/notification each time current batch finishes."""
         self.status_label.configure(text=t("status_walk_complete"))
-        self.start_walk_btn.configure(state="normal")
-        self.pause_walk_btn.configure(state="disabled")
-        self.stop_walk_btn.configure(state="disabled")
 
         # Use our new notifier utility to show a Toast or simple dialog
         import src.utils.notifier as notifier
 
-        notifier.show_notification(
+        notifier.notify(
             title=t("notify_walk_complete_title"),
             message=t("notify_walk_complete_body"),
         )
+
+    def _on_walk_session_end(self):
+        """Callback when walker session/thread actually ends."""
+        self.after(0, self._handle_walk_session_end_ui)
+
+    def _handle_walk_session_end_ui(self):
+        """Reset controls when a walk session is fully stopped."""
+        self.start_walk_btn.configure(state="normal")
+        self.pause_walk_btn.configure(state="disabled")
+        self.stop_walk_btn.configure(state="disabled")
 
     def _set_manual_location(self):
         """Set location from manual coordinates."""
@@ -1966,6 +1975,14 @@ class iFakeGPSApp(ctk.CTk):
 
     def _on_close(self):
         """Handle window close."""
+        # Try to clear simulated location before disconnect/exit.
+        # Keep this quiet to avoid interrupting shutdown with dialogs.
+        if self.device_manager and self.device_manager.connected:
+            try:
+                self.device_manager.clear_location()
+            except Exception as e:
+                logger.warning(f"Failed to clear simulated location on exit: {e}")
+
         # Stop walking
         if self.route_walker:
             self.route_walker.stop()
