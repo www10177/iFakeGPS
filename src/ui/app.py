@@ -33,6 +33,7 @@ class iFakeGPSApp(ctk.CTk):
 
     def __init__(self):
         super().__init__()
+        self._icon_path = None
 
         # Configure window
         self.title(t("app_title"))
@@ -50,9 +51,12 @@ class iFakeGPSApp(ctk.CTk):
 
             icon_path = os.path.join(application_path, "app.ico")
             if os.path.exists(icon_path):
+                self._icon_path = icon_path
                 self.iconbitmap(icon_path)
         except Exception as e:
             logger.warning(f"Failed to set icon: {e}")
+
+        self._check_windows_notification_registration()
 
         # Set theme
         ctk.set_appearance_mode("dark")
@@ -70,6 +74,7 @@ class iFakeGPSApp(ctk.CTk):
             update_callback=self._on_walk_step,
             completion_callback=self._on_walk_session_end,
             batch_completion_callback=self._on_walk_batch_complete,
+            disconnect_callback=self._on_walk_device_disconnected,
         )
         # Note: RouteWalker constructor signature changed in our new core implementation
         # Reviewing core/route_walker.py: __init__(self, device_manager, update_callback, completion_callback=None)
@@ -1832,12 +1837,38 @@ class iFakeGPSApp(ctk.CTk):
         """Show completion status/notification each time current batch finishes."""
         self.status_label.configure(text=t("status_walk_complete"))
 
-        # Use our new notifier utility to show a Toast or simple dialog
+        # Use notifier utility to show a Windows toast notification
         import src.utils.notifier as notifier
 
         notifier.notify(
             title=t("notify_walk_complete_title"),
             message=t("notify_walk_complete_body"),
+        )
+        messagebox.showinfo(
+            t("notify_walk_complete_title"),
+            t("notify_walk_complete_body"),
+        )
+
+    def _on_walk_device_disconnected(self):
+        """Callback when walker auto-pauses due to device disconnection."""
+        self.after(0, self._handle_walk_device_disconnected_ui)
+
+    def _handle_walk_device_disconnected_ui(self):
+        """Notify user and keep controls in paused state after disconnect."""
+        self.status_label.configure(text=t("status_walk_paused_disconnected"))
+        self.start_walk_btn.configure(state="normal")
+        self.pause_walk_btn.configure(state="disabled")
+        self.stop_walk_btn.configure(state="normal")
+
+        import src.utils.notifier as notifier
+
+        notifier.notify(
+            title=t("notify_device_disconnected_title"),
+            message=t("notify_device_disconnected_body"),
+        )
+        messagebox.showwarning(
+            t("dialog_walk_disconnected_title"),
+            t("dialog_walk_disconnected_msg"),
         )
 
     def _on_walk_session_end(self):
@@ -1914,6 +1945,30 @@ class iFakeGPSApp(ctk.CTk):
                 t("dialog_log_open_failed_title"),
                 t("dialog_log_open_failed_msg", error=e),
             )
+
+    def _check_windows_notification_registration(self):
+        """Auto-register Windows AppUserModelID if missing (silent mode)."""
+        if sys.platform != "win32":
+            return
+
+        try:
+            import src.utils.notifier as notifier
+
+            if notifier.is_windows_app_id_registered():
+                logger.debug("Windows AppUserModelID already registered.")
+                return
+
+            ok = notifier.register_windows_app_id(icon_path=self._icon_path)
+            if ok:
+                logger.info(
+                    "Windows AppUserModelID registered automatically at startup."
+                )
+            else:
+                logger.warning(
+                    "Windows AppUserModelID auto-registration failed; toast may be less reliable."
+                )
+        except Exception as e:
+            logger.warning("Notification registration check failed: %s", e)
 
     def _search_location(self, event=None):
         """Search for a location using Nominatim geocoding."""

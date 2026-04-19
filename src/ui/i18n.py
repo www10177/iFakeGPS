@@ -133,8 +133,11 @@ _STRINGS["en"] = {
     "status_not_walking": "Not currently walking.",
     "status_walk_stopped": "⏹ Walking stopped.",
     "status_walk_complete": "✅ Route walk completed!",
+    "status_walk_paused_disconnected": "⚠️ Device disconnected. Walking paused.",
     "notify_walk_complete_title": "iFakeGPS",
     "notify_walk_complete_body": "Route walk completed! All waypoints have been visited.",
+    "notify_device_disconnected_title": "iFakeGPS",
+    "notify_device_disconnected_body": "Current device disconnected. Walking has been paused.",
     "status_route_cleared": "Route cleared.",
     "status_setting_location": "Setting location to {lat}, {lon}...",
     "status_location_set": "✅ Location set to {lat}, {lon}",
@@ -168,6 +171,28 @@ _STRINGS["en"] = {
     "dialog_invalid_coords_msg": "Please enter valid latitude (-90 to 90) and longitude (-180 to 180).",
     "dialog_log_open_failed_title": "Cannot Open Log Folder",
     "dialog_log_open_failed_msg": "Failed to open log folder:\n{error}",
+    "dialog_walk_disconnected_title": "Device Disconnected",
+    "dialog_walk_disconnected_msg": (
+        "Current device was disconnected.\n\n"
+        "Route walking has been paused automatically.\n"
+        "Reconnect the device, then press Start to resume."
+    ),
+    "dialog_notify_reg_title": "Enable Windows Notifications",
+    "dialog_notify_reg_msg": (
+        "Windows notification identity is not registered yet.\n\n"
+        "Register now to improve toast popup reliability and sound?\n"
+        "(You only need to do this once.)"
+    ),
+    "dialog_notify_reg_done_title": "Registration Completed",
+    "dialog_notify_reg_done_msg": (
+        "Windows notification identity has been registered.\n"
+        "Please restart iFakeGPS for best results."
+    ),
+    "dialog_notify_reg_failed_title": "Registration Failed",
+    "dialog_notify_reg_failed_msg": (
+        "Failed to register Windows notification identity.\n"
+        "You can continue, but toast popup may be unreliable."
+    ),
     "dialog_enable_dev_title": "Enable Developer Mode",
     "dialog_enable_dev_msg": (
         "This command will trigger 'Enable Developer Mode' on the connected device.\n\n"
@@ -330,8 +355,11 @@ _STRINGS["zh_TW"] = {
     "status_not_walking": "目前未在行走。",
     "status_walk_stopped": "⏹ 行走已停止。",
     "status_walk_complete": "✅ 路線行走完成！",
+    "status_walk_paused_disconnected": "⚠️ 裝置已斷線，行走已暫停。",
     "notify_walk_complete_title": "iFakeGPS",
     "notify_walk_complete_body": "路線行走已完成！所有路點均已到達。",
+    "notify_device_disconnected_title": "iFakeGPS",
+    "notify_device_disconnected_body": "目前的裝置已斷線，行走已自動暫停。",
     "status_route_cleared": "路線已清除。",
     "status_setting_location": "正在設定位置到 {lat}, {lon}...",
     "status_location_set": "✅ 位置已設定到 {lat}, {lon}",
@@ -365,6 +393,28 @@ _STRINGS["zh_TW"] = {
     "dialog_invalid_coords_msg": "請輸入有效的緯度（-90 到 90）和經度（-180 到 180）。",
     "dialog_log_open_failed_title": "無法開啟 Log 資料夾",
     "dialog_log_open_failed_msg": "開啟 Log 資料夾失敗：\n{error}",
+    "dialog_walk_disconnected_title": "裝置已斷線",
+    "dialog_walk_disconnected_msg": (
+        "目前的裝置已斷線。\n\n"
+        "路線移動已自動暫停。\n"
+        "請重新連線後按「開始」繼續。"
+    ),
+    "dialog_notify_reg_title": "啟用 Windows 通知",
+    "dialog_notify_reg_msg": (
+        "尚未註冊 Windows 通知身分。\n\n"
+        "是否現在註冊，以提高通知彈出與聲音的成功率？\n"
+        "（只需設定一次）"
+    ),
+    "dialog_notify_reg_done_title": "註冊完成",
+    "dialog_notify_reg_done_msg": (
+        "已完成 Windows 通知身分註冊。\n"
+        "建議重新啟動 iFakeGPS 以獲得最佳效果。"
+    ),
+    "dialog_notify_reg_failed_title": "註冊失敗",
+    "dialog_notify_reg_failed_msg": (
+        "Windows 通知身分註冊失敗。\n"
+        "你仍可繼續使用，但通知彈出可能不穩定。"
+    ),
     "dialog_enable_dev_title": "啟用開發者模式",
     "dialog_enable_dev_msg": (
         "此操作將在已連接的裝置上觸發「啟用開發者模式」。\n\n"

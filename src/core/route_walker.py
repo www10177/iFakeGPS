@@ -26,11 +26,13 @@ class RouteWalker:
         update_callback: Callable[[float, float], None],
         completion_callback: Optional[Callable[[], None]] = None,
         batch_completion_callback: Optional[Callable[[], None]] = None,
+        disconnect_callback: Optional[Callable[[], None]] = None,
     ):
         self.device_manager = device_manager
         self.update_callback = update_callback
         self.completion_callback = completion_callback
         self.batch_completion_callback = batch_completion_callback
+        self.disconnect_callback = disconnect_callback
         self.points: list[RoutePoint] = []
         self.is_walking = False
         self.is_paused = False
@@ -51,6 +53,7 @@ class RouteWalker:
         self._resume_segment_index: int = 0  # which segment to continue from
         self._resume_covered_dist: float = 0.0  # how far into that segment (km)
         self._last_batch_completed_index: int = -1
+        self._disconnect_event_sent: bool = False
 
     def set_route(self, points: list[RoutePoint]):
         """Set the route points to walk.
@@ -108,6 +111,7 @@ class RouteWalker:
         self._resume_covered_dist = 0.0
         self._dispatched_index = 0  # next point index to start a segment FROM
         self._last_batch_completed_index = -1
+        self._disconnect_event_sent = False
 
         self.is_walking = True
         self.thread = threading.Thread(
@@ -127,6 +131,7 @@ class RouteWalker:
         self._resume_covered_dist = 0.0
         self._dispatched_index = 0
         self._last_batch_completed_index = -1
+        self._disconnect_event_sent = False
         logger.info("RouteWalker stop signalled")
 
     def _walk_loop(self, my_gen: int):
@@ -173,7 +178,11 @@ class RouteWalker:
                     self._resume_segment_index = i
                     start_pt = self.points[i]
                     end_pt = self.points[i + 1]
-                    self._walk_segment(start_pt, end_pt)
+                    segment_completed = self._walk_segment(start_pt, end_pt)
+                    if not segment_completed:
+                        # Do not advance head index if segment could not complete
+                        # (e.g. paused/disconnected/stop requested).
+                        break
 
                     # Segment done — advance the head pointer
                     self._resume_covered_dist = 0.0
@@ -182,6 +191,10 @@ class RouteWalker:
 
                 if self.stop_requested:
                     break
+                if self.is_paused:
+                    # Paused (including disconnect-triggered pause): keep waiting.
+                    time.sleep(0.2)
+                    continue
 
                 # All current segments are done.
                 if self.loop:
@@ -225,14 +238,14 @@ class RouteWalker:
                     self.completion_callback()
             logger.info(f"Walk gen={my_gen} finished")
 
-    def _walk_segment(self, start: RoutePoint, end: RoutePoint):
+    def _walk_segment(self, start: RoutePoint, end: RoutePoint) -> bool:
         """Walk between two route points with interpolation and pause support."""
         dist_km = self._haversine_distance(
             start.latitude, start.longitude, end.latitude, end.longitude
         )
 
         if dist_km == 0:
-            return
+            return True
 
         # Update frequency: 2Hz (every 0.5s) is responsive enough for USB
         update_interval = 0.5
@@ -247,7 +260,7 @@ class RouteWalker:
             self._pause_event.wait()
 
             if self.stop_requested:
-                break
+                return False
 
             # 1. Determine speed for this step
             step_speed = self.speed_kmh
@@ -274,10 +287,23 @@ class RouteWalker:
             new_lon = start.longitude + (end.longitude - start.longitude) * fraction
 
             # 6. Send location update
-            self.device_manager.set_location(new_lat, new_lon)
+            if not self.device_manager.set_location(new_lat, new_lon):
+                # Device disconnected or location update failed: auto-pause walker.
+                self._pause_event.clear()
+                self.is_paused = True
+                if self.disconnect_callback and not self._disconnect_event_sent:
+                    self._disconnect_event_sent = True
+                    self.disconnect_callback()
+                logger.warning("RouteWalker paused due to device disconnection")
+                return False
+
+            # Any successful location update clears one-shot disconnect notification lock.
+            self._disconnect_event_sent = False
             self.update_callback(new_lat, new_lon)
 
             time.sleep(update_interval)
+
+        return True
 
     def _haversine_distance(self, lat1, lon1, lat2, lon2):
         """Calculate haversine distance between two points in km."""
