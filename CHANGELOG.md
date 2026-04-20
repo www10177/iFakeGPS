@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-04-20
+
 ### Added
 - **Windows 通知註冊自動化**：啟動時自動檢查並註冊 `AppUserModelID`（`iFakeGPS`），提升 Windows Toast 通知可用性與穩定度。
 - **雙通道通知**：路線完成與裝置斷線事件，除了 Windows 通知外，會同步顯示 App 內確認彈窗，使用者可按「確定」關閉。
