@@ -2,12 +2,14 @@ import os
 import sys
 import threading
 import time
+import webbrowser
 from enum import Enum
 from tkinter import messagebox
 from typing import Optional
 
 import customtkinter as ctk
 
+from src.core import update_checker
 from src.core.device_manager import DeviceManager
 from src.core.models import DeviceInfo, RoutePoint
 from src.core.route_storage import RouteStorage
@@ -105,6 +107,8 @@ class iFakeGPSApp(ctk.CTk):
 
         # Auto-start tunneld and discover devices on startup
         self.after(500, self._start_tunneld_and_discover)
+        # Non-blocking update check
+        self.after(1200, self._check_for_updates_on_startup)
 
     def _show_dev_mode_guide(self):
         """Show the Developer Mode guide window."""
@@ -2028,6 +2032,53 @@ class iFakeGPSApp(ctk.CTk):
                 )
 
         threading.Thread(target=search, daemon=True).start()
+
+    def _check_for_updates_on_startup(self):
+        """Check latest GitHub release and prompt user to open download page."""
+
+        def run_check():
+            latest = update_checker.fetch_latest_release()
+            if not latest:
+                return
+
+            current_version = update_checker.get_current_version()
+            if not update_checker.is_newer_version(latest.version, current_version):
+                return
+
+            changelog = update_checker.summarize_changelog(latest.body)
+            self.after(
+                0,
+                lambda: self._show_update_prompt(
+                    current_version=current_version,
+                    latest_version=latest.version,
+                    release_url=latest.html_url,
+                    changelog=changelog,
+                ),
+            )
+
+        threading.Thread(target=run_check, daemon=True).start()
+
+    def _show_update_prompt(
+        self,
+        current_version: str,
+        latest_version: str,
+        release_url: str,
+        changelog: str,
+    ):
+        """Show update prompt with latest changelog and release link."""
+        message = t(
+            "dialog_update_available_msg",
+            current=current_version,
+            latest=latest_version,
+            url=release_url,
+            changelog=changelog or t("dialog_update_changelog_empty"),
+        )
+        should_open = messagebox.askyesno(
+            t("dialog_update_available_title"),
+            message,
+        )
+        if should_open:
+            webbrowser.open(release_url)
 
     def _on_search_result(self, lat: float, lon: float, display_name: str):
         """Handle search result on main thread."""

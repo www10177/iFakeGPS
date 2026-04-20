@@ -193,6 +193,18 @@ _STRINGS["en"] = {
         "Failed to register Windows notification identity.\n"
         "You can continue, but toast popup may be unreliable."
     ),
+    "dialog_update_available_title": "Update Available",
+    "dialog_update_changelog_empty": "(No changelog content provided)",
+    "dialog_update_available_msg": (
+        "A new version is available.\n\n"
+        "Current: {current}\n"
+        "Latest: {latest}\n\n"
+        "Latest changelog:\n"
+        "{changelog}\n\n"
+        "Download URL:\n"
+        "{url}\n\n"
+        "Open the release page now?"
+    ),
     "dialog_enable_dev_title": "Enable Developer Mode",
     "dialog_enable_dev_msg": (
         "This command will trigger 'Enable Developer Mode' on the connected device.\n\n"
@@ -414,6 +426,18 @@ _STRINGS["zh_TW"] = {
     "dialog_notify_reg_failed_msg": (
         "Windows 通知身分註冊失敗。\n"
         "你仍可繼續使用，但通知彈出可能不穩定。"
+    ),
+    "dialog_update_available_title": "有可用更新",
+    "dialog_update_changelog_empty": "（此版本未提供更新內容）",
+    "dialog_update_available_msg": (
+        "偵測到新版本。\n\n"
+        "目前版本：{current}\n"
+        "最新版本：{latest}\n\n"
+        "最新版本更新內容：\n"
+        "{changelog}\n\n"
+        "下載網址：\n"
+        "{url}\n\n"
+        "是否現在開啟下載頁面？"
     ),
     "dialog_enable_dev_title": "啟用開發者模式",
     "dialog_enable_dev_msg": (
