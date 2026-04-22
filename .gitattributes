@@ -1,0 +1,22 @@
+# Standardize line endings to LF for the repository
+# This ensures that even on Windows, the files in the repo remain LF
+* text=auto eol=lf
+
+# Force specific file types to always use LF
+*.py text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.spec text eol=lf
+
+# Batch files require CRLF for Windows compatibility
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files (images, icons) should not be touched
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.exe binary
