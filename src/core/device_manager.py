@@ -53,51 +53,53 @@ class DeviceManager:
                     for udid, tunnel_list in tunnels_data.items():
                         if not tunnel_list:
                             continue
-                        # Use the first tunnel for each device
-                        tunnel_info = (
-                            tunnel_list[0]
-                            if isinstance(tunnel_list, list)
-                            else tunnel_list
-                        )
-                        try:
-                            rsd_address = tunnel_info.get("tunnel-address", "")
-                            rsd_port = tunnel_info.get("tunnel-port", 0)
+                        
+                        # Iterate through all available tunnels for this device
+                        if not isinstance(tunnel_list, list):
+                            tunnel_list = [tunnel_list]
 
-                            if rsd_address and rsd_port:
-                                # Try to get device name from lockdown
-                                device_name = f"iOS Device ({udid[:8]}...)"
-                                product_type = "Unknown"
-                                ios_version = "17+"
+                        for tunnel_info in tunnel_list:
+                            try:
+                                rsd_address = tunnel_info.get("tunnel-address", "")
+                                rsd_port = tunnel_info.get("tunnel-port", 0)
+                                interface = tunnel_info.get("interface", "")
 
-                                try:
-                                    lockdown = create_using_usbmux(serial=udid)
-                                    device_name = (
-                                        lockdown.display_name
-                                        or lockdown.get_value(key="DeviceName")
-                                        or device_name
+                                if rsd_address and rsd_port:
+                                    # Try to get device name from lockdown
+                                    device_name = f"iOS Device ({udid[:8]}...)"
+                                    product_type = "Unknown"
+                                    ios_version = "17+"
+
+                                    try:
+                                        lockdown = create_using_usbmux(serial=udid)
+                                        device_name = (
+                                            lockdown.display_name
+                                            or lockdown.get_value(key="DeviceName")
+                                            or device_name
+                                        )
+                                        product_type = lockdown.product_type or product_type
+                                        ios_version = (
+                                            lockdown.product_version or ios_version
+                                        )
+                                        lockdown.close()
+                                    except Exception:
+                                        pass
+
+                                    device_info = DeviceInfo(
+                                        udid=udid,
+                                        name=device_name,
+                                        product_type=product_type,
+                                        ios_version=ios_version,
+                                        rsd_address=rsd_address,
+                                        rsd_port=rsd_port,
+                                        interface=interface,
                                     )
-                                    product_type = lockdown.product_type or product_type
-                                    ios_version = (
-                                        lockdown.product_version or ios_version
+                                    devices.append(device_info)
+                                    logger.info(
+                                        f"Found device: {device_name} ({product_type} - iOS {ios_version}) via {interface.upper()}"
                                     )
-                                    lockdown.close()
-                                except Exception:
-                                    pass
-
-                                device_info = DeviceInfo(
-                                    udid=udid,
-                                    name=device_name,
-                                    product_type=product_type,
-                                    ios_version=ios_version,
-                                    rsd_address=rsd_address,
-                                    rsd_port=rsd_port,
-                                )
-                                devices.append(device_info)
-                                logger.info(
-                                    f"Found device: {device_name} ({product_type} - iOS {ios_version})"
-                                )
-                        except Exception as e:
-                            logger.warning(f"Failed to parse tunnel info: {e}")
+                            except Exception as e:
+                                logger.warning(f"Failed to parse tunnel info: {e}")
             except requests.exceptions.ConnectionError:
                 logger.warning("tunneld HTTP API not available on port 49151")
             except Exception as e:
@@ -145,6 +147,7 @@ class DeviceManager:
                     # Try to get tunnel from tunneld API (root endpoint /)
                     rsd_address = ""
                     rsd_port = 0
+                    interface = ""
                     try:
                         response = requests.get("http://127.0.0.1:49151/", timeout=2)
                         if response.status_code == 200:
@@ -159,6 +162,7 @@ class DeviceManager:
                                     )
                                     rsd_address = tunnel_info.get("tunnel-address", "")
                                     rsd_port = tunnel_info.get("tunnel-port", 0)
+                                    interface = tunnel_info.get("interface", "")
                     except Exception:
                         pass
 
@@ -171,15 +175,16 @@ class DeviceManager:
                             ios_version=ios_version,
                             rsd_address=rsd_address,
                             rsd_port=rsd_port,
+                            interface=interface,
                         )
                         devices.append(device_info)
                         logger.info(
-                            f"Found device: {device_name} ({product_type} - iOS {ios_version})"
+                            f"Found device: {device_name} ({product_type} - iOS {ios_version}) via {interface.upper()}"
                         )
                     else:
                         logger.warning(
                             f"Device {device_name} found but no tunnel available. "
-                            "Please restart the application as Administrator to enable connectivity."
+                            "Ensure tunneld is running properly. Try restarting as Administrator if connectivity issues persist."
                         )
 
                 except Exception as e:

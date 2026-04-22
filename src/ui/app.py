@@ -284,6 +284,9 @@ class iFakeGPSApp(ctk.CTk):
                         t("dialog_wireless_title"), t("status_wireless_enabled")
                     ),
                 )
+                # After enabling wireless, the current USB tunnel might become invalid or 
+                # user is instructed to unplug. Reset UI to disconnected state.
+                self.after(0, self._disconnect_device)
             else:
                 self.after(
                     0,
@@ -1915,6 +1918,9 @@ class iFakeGPSApp(ctk.CTk):
         self.start_walk_btn.configure(state="normal")
         self.pause_walk_btn.configure(state="disabled")
         self.stop_walk_btn.configure(state="normal")
+
+        # Reset global connection state
+        self._disconnect_device()
 
         import src.utils.notifier as notifier
 

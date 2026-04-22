@@ -21,6 +21,9 @@ class DeviceInfo:
     ios_version: str
     rsd_address: str
     rsd_port: int
+    interface: Optional[str] = None  # e.g., "usb" or "wifi"
 
     def display_name(self) -> str:
-        return f"{self.name} ({self.product_type} - iOS {self.ios_version})"
+        icon = "🔌" if self.interface == "usb" else "📶"
+        interface_str = f" [{self.interface.upper()}]" if self.interface else ""
+        return f"{icon} {self.name} ({self.product_type} - iOS {self.ios_version}){interface_str}"

@@ -36,13 +36,13 @@ _STRINGS["en"] = {
     # --- Device Selection ---
     "device_selection": "Device Selection",
     "no_devices": "No devices found.\nStart tunneld first:\npymobiledevice3 remote tunneld",
-    "no_devices_admin": "No devices found.\n\nPlease restart the application\nas Administrator to enable connectivity!",
+    "no_devices_admin": "No devices found.\n\nPlease ensure USB is connected and Developer Mode is enabled.\nIf problems persist, try running as Administrator.",
     "conn_not_connected": "⭕ Not Connected",
     "conn_failed": "🔴 Connection Failed",
     "btn_disconnect": "Disconnect",
     "status_scanning": "🔍 Scanning for devices...",
     "status_found_devices": "Found {count} device(s). Click to connect.",
-    "status_no_devices": "⚠️ No connected devices found. Please run as Administrator.",
+    "status_no_devices": "⚠️ No devices found. Check connection and Developer Mode.",
     "status_connecting": "Connecting to {name}...",
     "status_connected": "Connected to {name}. Ready to simulate location.",
     "status_conn_failed": "Connection failed. Check tunneld status.",
@@ -53,9 +53,9 @@ _STRINGS["en"] = {
         "Failed to connect to the device.\n\n"
         "Make sure:\n"
         "1. Developer Mode is enabled on device\n"
-        "2. tunneld is running: pymobiledevice3 remote tunneld\n"
-        "3. Device is connected via USB\n"
-        "4. Run tunneld as Administrator/root"
+        "2. tunneld is running (try restarting as admin if it fails)\n"
+        "3. Device is connected via USB or same Wi-Fi\n"
+        "4. Trust this computer on your device"
     ),
     # --- Mode ---
     "mode_label": "🎯 Mode",
@@ -114,13 +114,13 @@ _STRINGS["en"] = {
     "btn_teleport": "✈ Teleport",
     "btn_enable_wireless": "Enable Wireless Mode",
     "status_wireless_enabling": "Enabling wireless mode...",
-    "status_wireless_enabled": "Wireless mode enabled! You can now unplug the USB.",
+    "status_wireless_enabled": "Wireless mode enabled! Unplug the USB and click 'Connect' again to use wireless mode.",
     "status_wireless_failed": "Failed to enable wireless mode. Ensure USB is connected.",
     "dialog_wireless_title": "Enable Wireless Mode",
     "dialog_wireless_msg": (
         "This will enable wireless connectivity for your iPhone.\n\n"
         "1. Ensure USB is currently connected.\n"
-        "2. Once enabled, you can unplug the cable.\n"
+        "2. Once enabled, unplug the cable and click the connect button to reconnect.\n"
         "3. Ensure phone and computer are on the SAME Wi-Fi.\n\n"
         "Proceed now?"
     ),
@@ -283,13 +283,13 @@ _STRINGS["zh_TW"] = {
     # --- Device Selection ---
     "device_selection": "裝置選擇",
     "no_devices": "找不到裝置。\n請先啟動 tunneld：\npymobiledevice3 remote tunneld",
-    "no_devices_admin": "找不到裝置。\n\n請以系統管理員身分\n重新啟動應用程式！",
+    "no_devices_admin": "找不到裝置。\n\n請確認 USB 已連接並開啟開發者模式。\n若仍有問題，請嘗試以系統管理員身分重新啟動。",
     "conn_not_connected": "⭕ 未連線",
     "conn_failed": "🔴 連線失敗",
     "btn_disconnect": "中斷連線",
     "status_scanning": "🔍 正在掃描裝置...",
     "status_found_devices": "找到 {count} 個裝置，點擊以連線。",
-    "status_no_devices": "⚠️ 找不到已連接的裝置，請以系統管理員身分執行。",
+    "status_no_devices": "⚠️ 找不到裝置。請確認連線並開啟開發者模式。",
     "status_connecting": "正在連線到 {name}...",
     "status_connected": "已連線到 {name}，可以開始模擬定位。",
     "status_conn_failed": "連線失敗，請檢查 tunneld 狀態。",
@@ -300,9 +300,9 @@ _STRINGS["zh_TW"] = {
         "無法連線到裝置。\n\n"
         "請確認：\n"
         "1. 裝置已開啟開發者模式\n"
-        "2. tunneld 正在執行：pymobiledevice3 remote tunneld\n"
-        "3. 裝置已透過 USB 連接\n"
-        "4. 以系統管理員身分執行 tunneld"
+        "2. tunneld 正在執行（若失敗請嘗試以管理員身分重啟）\n"
+        "3. 裝置已透過 USB 或同一個 Wi-Fi 連接\n"
+        "4. 在裝置上點擊「信任這部電腦」"
     ),
     # --- Mode ---
     "mode_label": "🎯 模式",
@@ -361,13 +361,13 @@ _STRINGS["zh_TW"] = {
     "btn_teleport": "✈ 瞬間移動",
     "btn_enable_wireless": "開啟無線模式",
     "status_wireless_enabling": "正在開啟無線模式...",
-    "status_wireless_enabled": "無線模式已開啟！您可以拔掉 USB 了。",
+    "status_wireless_enabled": "無線模式已開啟！請拔掉 USB 後，重新點擊「連線」按鈕即可使用無線模式。",
     "status_wireless_failed": "開啟無線模式失敗，請確保已連接 USB。",
     "dialog_wireless_title": "開啟無線模式",
     "dialog_wireless_msg": (
         "此操作將開啟 iPhone 的無線連線功能。\n\n"
         "1. 請確保目前已連接 USB。\n"
-        "2. 開啟後，您可以拔掉傳輸線。\n"
+        "2. 開啟後，請拔掉傳輸線，並點擊連線按鈕重新連線。\n"
         "3. 請確保手機與電腦在「同一個 Wi-Fi」下。\n\n"
         "是否現在開啟？"
     ),
