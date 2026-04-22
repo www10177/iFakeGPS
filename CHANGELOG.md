@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-04-22
+
+### Added
+- **無線連線模式 (Wireless Mode)**：新增對 iPhone Wi-Fi 連線的支援。現在可以透過 USB 開啟無線功能，之後只要在同一個 Wi-Fi 下即可免插線進行定位模擬。
+- **自動檢查更新 (Update Checker)**：App 啟動時會自動與 GitHub 最新 Release 進行比對，偵測到新版本時會彈出對話框顯示更新內容與下載連結。
+
+### Changed
+- **響應式 UI 優化 (Responsive UI)**：
+    - 將左側側邊欄改為可捲動容器 (`CTkScrollableFrame`)，解決在小螢幕或低解析度環境下功能按鈕被裁切的問題。
+    - 調降最小視窗尺寸至 `960x640`，並優化預設視窗佈局，提升在 13 吋筆電上的使用體驗。
+- **版本號同步顯示**：視窗標題現在會自動顯示目前的 App 版本號。
+
+### Fixed
+- **專案換行符號規範化**：新增 `.gitattributes` 檔案，確保跨平台開發時程式碼格式一致，解決 Windows 換行符號導致的 Git 衝突問題。
+
 ## [1.4.2] - 2026-04-20
 
 ### Added
