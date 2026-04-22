@@ -38,9 +38,9 @@ class iFakeGPSApp(ctk.CTk):
         self._icon_path = None
 
         # Configure window
-        self.title(t("app_title"))
-        self.geometry("1400x900")
-        self.minsize(1200, 700)
+        self._update_window_title()
+        self.geometry("1300x850")
+        self.minsize(960, 640)
 
         # Set icon
         try:
@@ -280,9 +280,10 @@ class iFakeGPSApp(ctk.CTk):
 
     def _create_sidebar(self):
         """Create the left sidebar with controls."""
-        sidebar = ctk.CTkFrame(self, width=350, corner_radius=0)
+        # Use a scrollable frame for the sidebar to support small screens
+        sidebar = ctk.CTkScrollableFrame(self, width=330, corner_radius=0, label_text="")
         sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew")
-        sidebar.grid_rowconfigure(11, weight=1)
+        sidebar.grid_columnconfigure(0, weight=1)
 
         # App title
         title_label = ctk.CTkLabel(
@@ -762,10 +763,6 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.open_logs_btn.grid(row=10, column=0, padx=15, pady=(0, 5), sticky="ew")
 
-        # Spacer
-        spacer = ctk.CTkLabel(sidebar, text="")
-        spacer.grid(row=11, column=0, sticky="nsew")
-
         # Info label at bottom
         info_label = ctk.CTkLabel(
             sidebar,
@@ -775,7 +772,7 @@ class iFakeGPSApp(ctk.CTk):
             justify="left",
         )
         self.info_label = info_label
-        info_label.grid(row=12, column=0, padx=15, pady=(5, 5), sticky="sw")
+        info_label.grid(row=12, column=0, padx=15, pady=(20, 5), sticky="sw")
 
         # Language selector
         lang_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
@@ -923,10 +920,15 @@ class iFakeGPSApp(ctk.CTk):
         set_lang(code)
         self._update_ui_text()
 
+    def _update_window_title(self):
+        """Update window title with app name and current version."""
+        version = update_checker.get_current_version()
+        self.title(f"{t('app_title')} v{version}")
+
     def _update_ui_text(self):
         """Refresh all visible widget text to reflect the current language."""
         # Window title
-        self.title(t("app_title"))
+        self._update_window_title()
 
         # Sidebar labels
         if hasattr(self, "lbl_device_control"):
@@ -1988,7 +1990,8 @@ class iFakeGPSApp(ctk.CTk):
                 import requests
 
                 # Use Nominatim with proper User-Agent (required by OSM)
-                headers = {"User-Agent": "iFakeGPS/1.0 (iOS Location Simulator)"}
+                version = update_checker.get_current_version()
+                headers = {"User-Agent": f"iFakeGPS/{version} (iOS Location Simulator)"}
                 params = {"q": query, "format": "json", "limit": 1}
 
                 response = requests.get(
