@@ -112,6 +112,19 @@ _STRINGS["en"] = {
     "label_lat": "Latitude:",
     "label_lon": "Longitude:",
     "btn_teleport": "✈ Teleport",
+    "btn_enable_wireless": "Enable Wireless Mode",
+    "status_wireless_enabling": "Enabling wireless mode...",
+    "status_wireless_enabled": "Wireless mode enabled! You can now unplug the USB.",
+    "status_wireless_failed": "Failed to enable wireless mode. Ensure USB is connected.",
+    "dialog_wireless_title": "Enable Wireless Mode",
+    "dialog_wireless_msg": (
+        "This will enable wireless connectivity for your iPhone.\n\n"
+        "1. Ensure USB is currently connected.\n"
+        "2. Once enabled, you can unplug the cable.\n"
+        "3. Ensure phone and computer are on the SAME Wi-Fi.\n\n"
+        "Proceed now?"
+    ),
+    "tip_wireless": "Once enabled, the device will appear automatically over Wi-Fi (no cable needed).",
     "btn_clear_location": "🔄 Clear Simulated Location",
     "btn_open_logs": "📂 Open Logs Folder",
     # --- Info label ---
@@ -346,6 +359,19 @@ _STRINGS["zh_TW"] = {
     "label_lat": "緯度：",
     "label_lon": "經度：",
     "btn_teleport": "✈ 瞬間移動",
+    "btn_enable_wireless": "開啟無線模式",
+    "status_wireless_enabling": "正在開啟無線模式...",
+    "status_wireless_enabled": "無線模式已開啟！您可以拔掉 USB 了。",
+    "status_wireless_failed": "開啟無線模式失敗，請確保已連接 USB。",
+    "dialog_wireless_title": "開啟無線模式",
+    "dialog_wireless_msg": (
+        "此操作將開啟 iPhone 的無線連線功能。\n\n"
+        "1. 請確保目前已連接 USB。\n"
+        "2. 開啟後，您可以拔掉傳輸線。\n"
+        "3. 請確保手機與電腦在「同一個 Wi-Fi」下。\n\n"
+        "是否現在開啟？"
+    ),
+    "tip_wireless": "開啟後，只要在同一個 Wi-Fi 下，下次不需插線即可自動連線。",
     "btn_clear_location": "🔄 清除模擬定位",
     "btn_open_logs": "📂 開啟 Log 資料夾",
     # --- Info label ---

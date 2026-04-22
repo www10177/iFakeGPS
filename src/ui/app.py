@@ -260,6 +260,44 @@ class iFakeGPSApp(ctk.CTk):
 
         threading.Thread(target=run_enable, daemon=True).start()
 
+    def _enable_wireless_flow(self):
+        """Trigger the flow to enable wireless connection."""
+        if not messagebox.askyesno(
+            t("dialog_wireless_title"),
+            t("dialog_wireless_msg"),
+        ):
+            return
+
+        self.status_label.configure(text=t("status_wireless_enabling"))
+        self.update()
+
+        def run_enable():
+            success = self.device_manager.enable_wireless_connection()
+            if success:
+                self.after(
+                    0,
+                    lambda: self.status_label.configure(text=t("status_wireless_enabled")),
+                )
+                self.after(
+                    0,
+                    lambda: messagebox.showinfo(
+                        t("dialog_wireless_title"), t("status_wireless_enabled")
+                    ),
+                )
+            else:
+                self.after(
+                    0,
+                    lambda: self.status_label.configure(text=t("status_wireless_failed")),
+                )
+                self.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        t("dialog_wireless_title"), t("status_wireless_failed")
+                    ),
+                )
+
+        threading.Thread(target=run_enable, daemon=True).start()
+
     def _create_ui(self):
         """Create the main UI layout."""
         # Configure grid
@@ -402,7 +440,19 @@ class iFakeGPSApp(ctk.CTk):
             hover_color="#4b5563",
             height=28,
         )
-        self.disconnect_btn.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
+        self.disconnect_btn.grid(row=3, column=0, padx=10, pady=(0, 5), sticky="ew")
+
+        # Wireless button
+        self.enable_wireless_btn = ctk.CTkButton(
+            device_frame,
+            text=t("btn_enable_wireless"),
+            command=self._enable_wireless_flow,
+            fg_color="#374151",
+            hover_color="#4b5563",
+            height=28,
+        )
+        self.enable_wireless_btn.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="ew")
+        add_tooltip_button(device_frame, text=t("tip_wireless")).grid(row=4, column=0, padx=(0, 10), sticky="e")
 
         # Mode selection
         mode_frame = ctk.CTkFrame(sidebar)

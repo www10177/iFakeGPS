@@ -365,6 +365,35 @@ class DeviceManager:
             logger.error(f"Failed to enable developer mode: {e}")
             return False
 
+    def enable_wireless_connection(self, udid: str = None) -> bool:
+        """Enable wireless (Wi-Fi) connection for the device."""
+        try:
+            target_udid = udid
+            if not target_udid and self.current_device:
+                target_udid = self.current_device.udid
+
+            if not target_udid:
+                devices = list_devices()
+                if devices:
+                    target_udid = devices[0].serial
+
+            if not target_udid:
+                logger.error("No device target for wireless enablement")
+                return False
+
+            with create_using_usbmux(serial=target_udid) as lockdown:
+                # This domain enables the "Sync with this iPhone over Wi-Fi" functionality
+                lockdown.set_value(
+                    domain="com.apple.mobile.wireless_lockdown",
+                    key="EnableWirelessLockdown",
+                    value=True,
+                )
+                logger.info(f"Wireless connection enabled for device: {target_udid}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to enable wireless connection: {e}")
+            return False
+
     def auto_mount_developer_disk_image(self, udid: str = None) -> bool:
         """
         Auto-mount Developer Disk Image.
