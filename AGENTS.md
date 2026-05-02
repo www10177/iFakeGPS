@@ -11,6 +11,8 @@ This project uses `uv` for dependency management and execution.
     *   To add packages: `uv add <package_name>`
     *   To add dev packages: `uv add --dev <package_name>`
     *   To run build scripts: `uv run pack.bat` (essentially just runs the bat which calls `uv run pyinstaller`)
+    *   **WSL/Linux agent environment**: Do NOT use or modify the project-local `.venv`; it is reserved for the user's Windows environment. When running checks from WSL/Linux, point `uv` at an external virtualenv, for example:
+        *   `UV_PROJECT_ENVIRONMENT=/tmp/ifakegps-check-venv uv run --no-sync python -m py_compile ...`
 
 2.  **Platform specifics**:
     *   **Windows**: The project is primarily targeted for Windows (handling admin privileges, `pythonw` for GUI, etc.).

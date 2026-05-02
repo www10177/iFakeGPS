@@ -11,14 +11,15 @@ import customtkinter as ctk
 
 from src.core import update_checker
 from src.core.device_manager import DeviceManager
+from src.core.location_storage import LocationStorage, SavedLocationInfo
 from src.core.models import DeviceInfo, RoutePoint
-from src.core.route_storage import RouteStorage
+from src.core.route_storage import RouteStorage, SavedRouteInfo
 from src.core.route_walker import RouteWalker
 from src.core.routing import RoutingError, RoutingService
 from src.core.tunnel_manager import TunneldManager
 from src.ui.caching_map_view import CachingTileMapView
 from src.ui.i18n import LANGUAGES, get_lang, set_lang, t
-from src.ui.tooltip import add_tooltip_button
+from src.ui.tooltip import ToolTip, add_tooltip_button
 from src.utils.logger import get_log_dir, logger
 
 
@@ -26,6 +27,14 @@ class AppMode(Enum):
     SINGLE_POINT = "single"
     ROUTE = "route"
     NAVIGATION = "navigation"
+
+
+ICON_FONT_FAMILY = "Segoe MDL2 Assets"
+ICON_CENTER = "\uE81E"
+ICON_LOCK = "\uE72E"
+ICON_UNLOCK = "\uE785"
+ICON_AIRPLANE = "\uE709"
+ICON_DELETE = "\uE74D"
 
 
 class iFakeGPSApp(ctk.CTk):
@@ -39,7 +48,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Configure window
         self._update_window_title()
-        self.geometry("1300x850")
+        self.geometry("1500x850")
         self.minsize(960, 640)
 
         # Set icon
@@ -90,6 +99,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Initialize Routing & Storage
         self.route_storage = RouteStorage(os.path.join(self.cache_dir, "routes.db"))
+        self.location_storage = LocationStorage(os.path.join(self.cache_dir, "routes.db"))
         self.routing_service = RoutingService()
 
         # State
@@ -97,7 +107,10 @@ class iFakeGPSApp(ctk.CTk):
         self.route_points: list[RoutePoint] = []
         self.route_path = None  # Map path object
         self.current_position_marker = None
+        self.current_simulated_position: tuple[float, float] | None = None
+        self.follow_current_position = True
         self.discovered_devices: list[DeviceInfo] = []
+        self.right_panel_visible = True
 
         # Build UI
         self._create_ui()
@@ -305,6 +318,7 @@ class iFakeGPSApp(ctk.CTk):
         """Create the main UI layout."""
         # Configure grid
         self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=0)
         self.grid_rowconfigure(0, weight=1)
 
         # Create left sidebar
@@ -312,6 +326,9 @@ class iFakeGPSApp(ctk.CTk):
 
         # Create main map area
         self._create_map_area()
+
+        # Create right management panel
+        self._create_right_panel()
 
         # Create bottom status bar
         self._create_status_bar()
@@ -476,15 +493,6 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.single_radio.grid(row=1, column=0, padx=20, pady=5, sticky="w")
 
-        self.route_radio = ctk.CTkRadioButton(
-            mode_frame,
-            text=t("mode_route"),
-            variable=self.mode_var,
-            value="route",
-            command=self._on_mode_change,
-        )
-        self.route_radio.grid(row=2, column=0, padx=20, pady=5, sticky="w")
-
         self.nav_radio = ctk.CTkRadioButton(
             mode_frame,
             text=t("mode_navigation"),
@@ -492,7 +500,7 @@ class iFakeGPSApp(ctk.CTk):
             value="navigation",
             command=self._on_mode_change,
         )
-        self.nav_radio.grid(row=3, column=0, padx=20, pady=(5, 10), sticky="w")
+        self.nav_radio.grid(row=2, column=0, padx=20, pady=(5, 10), sticky="w")
 
         # Route controls
         self.route_frame = ctk.CTkFrame(sidebar)
@@ -542,8 +550,8 @@ class iFakeGPSApp(ctk.CTk):
         self.speed_slider = ctk.CTkSlider(
             self.route_frame,
             from_=0,
-            to=1000,
-            number_of_steps=1000,
+            to=110,
+            number_of_steps=110,
             command=self._on_speed_slider_change,
         )
         self.speed_slider.grid(
@@ -592,21 +600,36 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.route_info.grid(row=5, column=0, columnspan=2, padx=10, pady=5)
 
-        # Route buttons
-        route_btn_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
-        route_btn_frame.grid(
+        # Route planning buttons
+        route_plan_btn_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
+        route_plan_btn_frame.grid(
             row=6, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
         )
+        route_plan_btn_frame.grid_columnconfigure((0, 1), weight=1)
 
         self.btn_calc_route = self.calc_route_btn = ctk.CTkButton(
-            route_btn_frame,
+            route_plan_btn_frame,
             text=t("btn_calc_route"),
             command=self._calculate_navigation_route,
             fg_color="#3b82f6",
             hover_color="#2563eb",
-            width=80,
         )
-        self.calc_route_btn.pack(side="left", expand=True, fill="x", padx=1)
+        self.calc_route_btn.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+
+        self.clear_route_btn = ctk.CTkButton(
+            route_plan_btn_frame,
+            text=t("btn_clear_route"),
+            command=self._clear_route,
+            fg_color="#6b7280",
+            hover_color="#4b5563",
+        )
+        self.clear_route_btn.grid(row=0, column=1, padx=(4, 0), sticky="ew")
+
+        # Route walking buttons
+        route_btn_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
+        route_btn_frame.grid(
+            row=7, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
+        )
 
         # Note: We need to assign these to self for update_ui_text
         self.btn_start_walk = self.start_walk_btn = ctk.CTkButton(
@@ -645,110 +668,12 @@ class iFakeGPSApp(ctk.CTk):
             self.route_frame, text=t("chk_loop"), variable=self.loop_var
         )
         self.chk_loop.grid(
-            row=7, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w"
+            row=8, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w"
         )
-
-        # Clear route button
-        self.clear_route_btn = ctk.CTkButton(
-            self.route_frame,
-            text=t("btn_clear_route"),
-            command=self._clear_route,
-            fg_color="#6b7280",
-            hover_color="#4b5563",
-        )
-        self.clear_route_btn.grid(
-            row=8, column=0, columnspan=2, padx=10, pady=(0, 5), sticky="ew"
-        )
-
-        # --- Route Storage & Settings Frame ---
-        self.storage_settings_frame = ctk.CTkFrame(sidebar)
-        self.storage_settings_frame.grid(row=7, column=0, padx=15, pady=5, sticky="ew")
-
-        # Tabs for Storage and Routing Engine
-        self.rt_tabview = ctk.CTkTabview(self.storage_settings_frame, height=140)
-        self.rt_tabview.pack(fill="both", expand=True, padx=5, pady=5)
-        self._storage_tab_name = t("tab_storage")
-        self._routing_tab_name = t("tab_routing")
-        self.rt_tabview.add(self._storage_tab_name)
-        self.rt_tabview.add(self._routing_tab_name)
-
-        # 1. Storage Tab
-        tab_storage = self.rt_tabview.tab(self._storage_tab_name)
-        tab_storage.grid_columnconfigure((0, 1), weight=1)
-
-        self.btn_save_route = ctk.CTkButton(
-            tab_storage,
-            text=t("btn_save_route"),
-            command=self._save_route_dialog,
-            width=80,
-        )
-        self.btn_save_route.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-
-        self.btn_load_route = ctk.CTkButton(
-            tab_storage,
-            text=t("btn_load_route"),
-            command=self._load_route_dialog,
-            width=80,
-        )
-        self.btn_load_route.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-
-        self.btn_import_gpx = ctk.CTkButton(
-            tab_storage,
-            text=t("btn_import_gpx"),
-            command=self._import_gpx_dialog,
-            width=80,
-            fg_color="#6b7280",
-            hover_color="#4b5563",
-        )
-        self.btn_import_gpx.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
-
-        self.btn_export_gpx = ctk.CTkButton(
-            tab_storage,
-            text=t("btn_export_gpx"),
-            command=self._export_gpx_dialog,
-            width=80,
-            fg_color="#6b7280",
-            hover_color="#4b5563",
-        )
-        self.btn_export_gpx.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-
-        # 2. Routing Engine Tab
-        tab_routing = self.rt_tabview.tab(self._routing_tab_name)
-        tab_routing.grid_columnconfigure(1, weight=1)
-
-        self.provider_var = ctk.StringVar(value=self.routing_service.provider)
-
-        self.rad_osrm = ctk.CTkRadioButton(
-            tab_routing,
-            text=t("provider_osrm"),
-            variable=self.provider_var,
-            value="osrm",
-            command=self._apply_routing_settings,
-        )
-        self.rad_osrm.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-
-        self.rad_ors = ctk.CTkRadioButton(
-            tab_routing,
-            text=t("provider_ors"),
-            variable=self.provider_var,
-            value="ors",
-            command=self._apply_routing_settings,
-        )
-        self.rad_ors.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-
-        self.ors_key_entry = ctk.CTkEntry(
-            tab_routing, placeholder_text=t("api_key_placeholder"), width=150, height=24
-        )
-        self.ors_key_entry.grid(
-            row=2, column=0, columnspan=2, padx=25, pady=(0, 5), sticky="ew"
-        )
-        self.ors_key_entry.insert(0, self.routing_service.api_key)
-        self.ors_key_entry.bind("<FocusOut>", lambda e: self._apply_routing_settings())
-        self.ors_key_entry.bind("<Return>", lambda e: self._apply_routing_settings())
 
         # Coordinates section
         self.coord_frame = ctk.CTkFrame(sidebar)
-        self.coord_frame.grid(row=8, column=0, padx=15, pady=5, sticky="ew")
+        self.coord_frame.grid(row=7, column=0, padx=15, pady=5, sticky="ew")
 
         self.lbl_manual = ctk.CTkLabel(
             self.coord_frame,
@@ -802,7 +727,7 @@ class iFakeGPSApp(ctk.CTk):
             height=30,
         )
         self.clear_location_btn.grid(
-            row=9, column=0, padx=15, pady=(5, 5), sticky="ew"
+            row=8, column=0, padx=15, pady=(5, 5), sticky="ew"
         )
 
         # Open logs folder button
@@ -814,7 +739,7 @@ class iFakeGPSApp(ctk.CTk):
             hover_color="#4b5563",
             height=30,
         )
-        self.open_logs_btn.grid(row=10, column=0, padx=15, pady=(0, 5), sticky="ew")
+        self.open_logs_btn.grid(row=9, column=0, padx=15, pady=(0, 5), sticky="ew")
 
         # Info label at bottom
         info_label = ctk.CTkLabel(
@@ -825,11 +750,11 @@ class iFakeGPSApp(ctk.CTk):
             justify="left",
         )
         self.info_label = info_label
-        info_label.grid(row=12, column=0, padx=15, pady=(20, 5), sticky="sw")
+        info_label.grid(row=11, column=0, padx=15, pady=(20, 5), sticky="sw")
 
         # Language selector
         lang_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        lang_frame.grid(row=13, column=0, padx=15, pady=(0, 15), sticky="sw")
+        lang_frame.grid(row=12, column=0, padx=15, pady=(0, 15), sticky="sw")
 
         self.lang_label = ctk.CTkLabel(
             lang_frame, text=t("lang_label"), font=ctk.CTkFont(size=11)
@@ -852,6 +777,154 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.lang_combo.set(current_name)
         self.lang_combo.pack(side="left", padx=(5, 0))
+
+    def _create_right_panel(self):
+        """Create the foldable right panel for saved places and routes."""
+        self.right_panel = ctk.CTkFrame(self, width=320, corner_radius=0)
+        self.right_panel.grid(row=0, column=2, rowspan=2, sticky="nsew")
+        self.right_panel.grid_propagate(False)
+        self.right_panel.grid_columnconfigure(0, weight=1)
+        self.right_panel.grid_rowconfigure(1, weight=1)
+
+        self.right_panel_collapsed = ctk.CTkFrame(self, width=44, corner_radius=0)
+        self.right_panel_collapsed.grid_propagate(False)
+        self.right_panel_collapsed.grid_columnconfigure(0, weight=1)
+        self.right_panel_collapsed.grid_rowconfigure(0, weight=1)
+        self.btn_expand_right_panel = ctk.CTkButton(
+            self.right_panel_collapsed,
+            text="‹",
+            width=32,
+            command=self._toggle_right_panel,
+        )
+        self.btn_expand_right_panel.grid(row=0, column=0, padx=6, pady=15, sticky="n")
+        self.right_panel_collapsed.grid_remove()
+
+        panel_header = ctk.CTkFrame(self.right_panel, fg_color="transparent")
+        panel_header.grid(row=0, column=0, padx=12, pady=(15, 5), sticky="ew")
+        panel_header.grid_columnconfigure(0, weight=1)
+
+        self.right_panel_title = ctk.CTkLabel(
+            panel_header,
+            text=t("quick_panel_title"),
+            font=ctk.CTkFont(size=18, weight="bold"),
+        )
+        self.right_panel_title.grid(row=0, column=0, sticky="w")
+
+        self.btn_collapse_right_panel = ctk.CTkButton(
+            panel_header,
+            text="›",
+            width=32,
+            command=self._toggle_right_panel,
+            fg_color="#374151",
+            hover_color="#4b5563",
+        )
+        self.btn_collapse_right_panel.grid(row=0, column=1, padx=(8, 0), sticky="e")
+
+        self.quick_tabview = ctk.CTkTabview(self.right_panel)
+        self.quick_tabview.grid(row=1, column=0, padx=10, pady=(5, 10), sticky="nsew")
+        self._places_tab_name = t("tab_places")
+        self._routes_tab_name = t("tab_routes")
+        self.quick_tabview.add(self._places_tab_name)
+        self.quick_tabview.add(self._routes_tab_name)
+
+        self._build_places_tab(self.quick_tabview.tab(self._places_tab_name))
+        self._build_routes_tab(self.quick_tabview.tab(self._routes_tab_name))
+        self._refresh_saved_locations()
+        self._refresh_saved_routes()
+
+    def _build_places_tab(self, tab):
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(3, weight=1)
+
+        self.place_name_entry = ctk.CTkEntry(
+            tab, placeholder_text=t("placeholder_location_name"), height=30
+        )
+        self.place_name_entry.grid(row=0, column=0, padx=8, pady=(8, 4), sticky="ew")
+
+        self.btn_save_location = ctk.CTkButton(
+            tab,
+            text=t("btn_save_location"),
+            command=self._save_current_location,
+            height=30,
+        )
+        self.btn_save_location.grid(row=1, column=0, padx=8, pady=4, sticky="ew")
+
+        self.location_hint_label = ctk.CTkLabel(
+            tab,
+            text=t("location_panel_hint"),
+            text_color="gray",
+            font=ctk.CTkFont(size=11),
+            justify="left",
+            wraplength=270,
+        )
+        self.location_hint_label.grid(row=2, column=0, padx=8, pady=(2, 8), sticky="ew")
+
+        self.locations_list_frame = ctk.CTkScrollableFrame(tab, fg_color="#111827")
+        self.locations_list_frame.grid(row=3, column=0, padx=8, pady=4, sticky="nsew")
+        self.locations_list_frame.grid_columnconfigure(0, weight=1)
+
+    def _build_routes_tab(self, tab):
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(2, weight=1)
+
+        route_actions = ctk.CTkFrame(tab, fg_color="transparent")
+        route_actions.grid(row=0, column=0, padx=8, pady=(8, 4), sticky="ew")
+        route_actions.grid_columnconfigure((0, 1), weight=1)
+
+        self.btn_save_route = ctk.CTkButton(
+            route_actions,
+            text=t("btn_save_route"),
+            command=self._save_route_dialog,
+            height=30,
+        )
+        self.btn_save_route.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+
+        self.btn_import_gpx = ctk.CTkButton(
+            route_actions,
+            text=t("btn_import_gpx"),
+            command=self._import_gpx_dialog,
+            height=30,
+            fg_color="#6b7280",
+            hover_color="#4b5563",
+        )
+        self.btn_import_gpx.grid(row=0, column=1, padx=(4, 0), sticky="ew")
+
+        route_actions_2 = ctk.CTkFrame(tab, fg_color="transparent")
+        route_actions_2.grid(row=1, column=0, padx=8, pady=4, sticky="ew")
+        route_actions_2.grid_columnconfigure((0, 1), weight=1)
+
+        self.btn_export_gpx = ctk.CTkButton(
+            route_actions_2,
+            text=t("btn_export_gpx"),
+            command=self._export_gpx_dialog,
+            height=30,
+            fg_color="#6b7280",
+            hover_color="#4b5563",
+        )
+        self.btn_export_gpx.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+
+        self.btn_refresh_routes = ctk.CTkButton(
+            route_actions_2,
+            text=t("btn_refresh"),
+            command=self._refresh_saved_routes,
+            height=30,
+            fg_color="#374151",
+            hover_color="#4b5563",
+        )
+        self.btn_refresh_routes.grid(row=0, column=1, padx=(4, 0), sticky="ew")
+
+        self.routes_list_frame = ctk.CTkScrollableFrame(tab, fg_color="#111827")
+        self.routes_list_frame.grid(row=2, column=0, padx=8, pady=4, sticky="nsew")
+        self.routes_list_frame.grid_columnconfigure(0, weight=1)
+
+    def _toggle_right_panel(self):
+        self.right_panel_visible = not self.right_panel_visible
+        if self.right_panel_visible:
+            self.right_panel_collapsed.grid_remove()
+            self.right_panel.grid(row=0, column=2, rowspan=2, sticky="nsew")
+        else:
+            self.right_panel.grid_remove()
+            self.right_panel_collapsed.grid(row=0, column=2, rowspan=2, sticky="nsew")
 
     def _create_map_area(self):
         """Create the main map area."""
@@ -889,10 +962,33 @@ class iFakeGPSApp(ctk.CTk):
         # Bind click event
         self.map_widget.add_left_click_map_command(self._on_map_click)
 
-        # Map controls (Simplified as per user request)
-        # Search, Zoom, and Type selection removed.
-        # Map controls placeholder (currently empty; kept for future use)
-        # map_controls = ctk.CTkFrame(map_frame, fg_color="transparent")
+        map_toolbar = ctk.CTkFrame(map_frame, fg_color="#111827", corner_radius=8)
+        map_toolbar.grid(row=0, column=0, padx=14, pady=14, sticky="ne")
+
+        self.btn_jump_current_position = ctk.CTkButton(
+            map_toolbar,
+            text=ICON_CENTER,
+            font=ctk.CTkFont(family=ICON_FONT_FAMILY, size=16),
+            width=34,
+            height=30,
+            command=self._jump_to_current_position,
+            fg_color="#374151",
+            hover_color="#4b5563",
+        )
+        self.btn_jump_current_position.grid(row=0, column=0, padx=(6, 3), pady=6)
+        ToolTip(self.btn_jump_current_position, text=t("tip_jump_current_position"))
+
+        self.btn_follow_current_position = ctk.CTkButton(
+            map_toolbar,
+            text=ICON_LOCK,
+            font=ctk.CTkFont(family=ICON_FONT_FAMILY, size=16),
+            width=34,
+            height=30,
+            command=self._toggle_follow_current_position,
+        )
+        self.btn_follow_current_position.grid(row=0, column=1, padx=(3, 6), pady=6)
+        ToolTip(self.btn_follow_current_position, text=t("tip_follow_current_position"))
+        self._update_follow_button_state()
 
     def _set_default_location(self):
         """Try to set map position based on Windows Location API, with IP fallback."""
@@ -940,6 +1036,43 @@ class iFakeGPSApp(ctk.CTk):
             logger.warning("Windows Location API failed. Using default location.")
 
         threading.Thread(target=fetch_location, daemon=True).start()
+
+    def _jump_to_current_position(self):
+        """Center the map on the current simulated GPS position."""
+        if self.current_simulated_position is None:
+            self.status_label.configure(text=t("status_no_current_position"))
+            return
+        lat, lon = self.current_simulated_position
+        self.map_widget.set_position(lat, lon)
+        self.map_widget.set_zoom(15)
+        self.status_label.configure(text=t("status_jumped_current_position"))
+
+    def _toggle_follow_current_position(self):
+        """Toggle whether navigation updates keep the map centered."""
+        self.follow_current_position = not self.follow_current_position
+        self._update_follow_button_state()
+        status_key = (
+            "status_follow_enabled"
+            if self.follow_current_position
+            else "status_follow_disabled"
+        )
+        self.status_label.configure(text=t(status_key))
+
+    def _update_follow_button_state(self):
+        if not hasattr(self, "btn_follow_current_position"):
+            return
+        if self.follow_current_position:
+            self.btn_follow_current_position.configure(
+                text=ICON_LOCK,
+                fg_color="#10b981",
+                hover_color="#059669",
+            )
+        else:
+            self.btn_follow_current_position.configure(
+                text=ICON_UNLOCK,
+                fg_color="#374151",
+                hover_color="#4b5563",
+            )
 
     def _create_status_bar(self):
         """Create the bottom status bar."""
@@ -1000,8 +1133,6 @@ class iFakeGPSApp(ctk.CTk):
         # Mode
         if hasattr(self, "single_radio"):
             self.single_radio.configure(text=t("mode_single"))
-        if hasattr(self, "route_radio"):
-            self.route_radio.configure(text=t("mode_route"))
         if hasattr(self, "nav_radio"):
             self.nav_radio.configure(text=t("mode_navigation"))
         if hasattr(self, "lbl_route"):
@@ -1034,8 +1165,21 @@ class iFakeGPSApp(ctk.CTk):
             self.clear_route_btn.configure(text=t("btn_clear_route"))
         if hasattr(self, "btn_calc_route"):
             self.btn_calc_route.configure(text=t("btn_calc_route"))
-        if hasattr(self, "storage_title_label"):
-            self.storage_title_label.configure(text=t("route_storage_title"))
+        if hasattr(self, "right_panel_title"):
+            self.right_panel_title.configure(text=t("quick_panel_title"))
+        if hasattr(self, "place_name_entry"):
+            self.place_name_entry.configure(placeholder_text=t("placeholder_location_name"))
+        if hasattr(self, "btn_save_location"):
+            self.btn_save_location.configure(text=t("btn_save_location"))
+        if hasattr(self, "location_hint_label"):
+            self.location_hint_label.configure(text=t("location_panel_hint"))
+        if hasattr(self, "btn_jump_current_position"):
+            ToolTip(self.btn_jump_current_position, text=t("tip_jump_current_position"))
+        if hasattr(self, "btn_follow_current_position"):
+            ToolTip(
+                self.btn_follow_current_position,
+                text=t("tip_follow_current_position"),
+            )
         if hasattr(self, "btn_save_route"):
             self.btn_save_route.configure(text=t("btn_save_route"))
         if hasattr(self, "btn_load_route"):
@@ -1044,6 +1188,12 @@ class iFakeGPSApp(ctk.CTk):
             self.btn_import_gpx.configure(text=t("btn_import_gpx"))
         if hasattr(self, "btn_export_gpx"):
             self.btn_export_gpx.configure(text=t("btn_export_gpx"))
+        if hasattr(self, "btn_refresh_routes"):
+            self.btn_refresh_routes.configure(text=t("btn_refresh"))
+        if hasattr(self, "locations_list_frame"):
+            self._refresh_saved_locations()
+        if hasattr(self, "routes_list_frame"):
+            self._refresh_saved_routes()
 
         # Manual coords
         if hasattr(self, "lbl_manual"):
@@ -1191,22 +1341,61 @@ class iFakeGPSApp(ctk.CTk):
             self.status_label.configure(text=t("status_no_devices"))
         else:
             for i, device in enumerate(devices):
-                device_btn = ctk.CTkButton(
-                    self.device_listbox_frame,
-                    text=device.display_name(),
-                    command=lambda d=device: self._connect_to_device(d),
-                    fg_color="#1e3a5f"
-                    if not self._is_device_connected(device)
-                    else "#10b981",
-                    hover_color="#2563eb",
-                    anchor="w",
-                    height=40,
-                )
-                device_btn.grid(row=i, column=0, padx=5, pady=2, sticky="ew")
+                self._create_device_row(self.device_listbox_frame, i, device)
 
             self.status_label.configure(
                 text=t("status_found_devices", count=len(devices))
             )
+
+    def _create_device_row(self, parent, row: int, device: DeviceInfo):
+        connected = self._is_device_connected(device)
+        row_frame = ctk.CTkFrame(
+            parent,
+            fg_color="#10b981" if connected else "#1e3a5f",
+            cursor="hand2",
+        )
+        row_frame.grid(row=row, column=0, padx=5, pady=3, sticky="ew")
+        row_frame.grid_columnconfigure(0, weight=1)
+
+        interface = (device.interface or "").upper()
+        interface_text = interface if interface else "--"
+
+        name_label = ctk.CTkLabel(
+            row_frame,
+            text=self._shorten_device_name(device.name),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w",
+        )
+        name_label.grid(row=0, column=0, padx=(10, 6), pady=(7, 0), sticky="ew")
+
+        badge = ctk.CTkLabel(
+            row_frame,
+            text=interface_text,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color="#dbeafe",
+            fg_color="#0f172a",
+            corner_radius=6,
+            width=42,
+        )
+        badge.grid(row=0, column=1, padx=(0, 8), pady=(7, 0), sticky="e")
+
+        meta_label = ctk.CTkLabel(
+            row_frame,
+            text=f"{device.product_type} · iOS {device.ios_version}",
+            font=ctk.CTkFont(size=11),
+            text_color="#d1d5db",
+            anchor="w",
+        )
+        meta_label.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 7), sticky="ew")
+
+        for widget in (row_frame, name_label, badge, meta_label):
+            widget.bind("<Button-1>", lambda _event, d=device: self._connect_to_device(d))
+
+    @staticmethod
+    def _shorten_device_name(name: str, max_chars: int = 24) -> str:
+        if len(name) <= max_chars:
+            return name
+        return name[: max_chars - 1] + "…"
 
     def _is_device_connected(self, device: DeviceInfo) -> bool:
         """Check if a device is currently connected."""
@@ -1261,16 +1450,12 @@ class iFakeGPSApp(ctk.CTk):
         mode_str = self.mode_var.get()
         if mode_str == "single":
             self.mode = AppMode.SINGLE_POINT
-        elif mode_str == "navigation":
-            self.mode = AppMode.NAVIGATION
         else:
-            self.mode = AppMode.ROUTE
+            self.mode = AppMode.NAVIGATION
 
         if self.mode == AppMode.SINGLE_POINT:
             if hasattr(self, "route_frame"):
                 self.route_frame.grid_remove()
-            if hasattr(self, "storage_settings_frame"):
-                self.storage_settings_frame.grid_remove()
             if hasattr(self, "coord_frame"):
                 self.coord_frame.grid()
             self.status_label.configure(text=t("status_single_mode"))
@@ -1279,15 +1464,7 @@ class iFakeGPSApp(ctk.CTk):
                 self.coord_frame.grid_remove()
             if hasattr(self, "route_frame"):
                 self.route_frame.grid()
-            if hasattr(self, "storage_settings_frame"):
-                self.storage_settings_frame.grid()
-
-            if self.mode == AppMode.NAVIGATION:
-                self.status_label.configure(text=t("status_nav_mode"))
-                self.calc_route_btn.pack(side="left", expand=True, fill="x", padx=1)
-            else:
-                self.status_label.configure(text=t("status_route_mode"))
-                self.calc_route_btn.pack_forget()
+            self.status_label.configure(text=t("status_nav_mode"))
 
     def _on_map_click(self, coords):
         """Handle map click."""
@@ -1376,6 +1553,7 @@ class iFakeGPSApp(ctk.CTk):
     def _on_location_set(self, success: bool, lat: float, lon: float):
         """Called after location is set."""
         if success:
+            self.current_simulated_position = (lat, lon)
             self.status_label.configure(
                 text=t("status_location_set", lat=f"{lat:.6f}", lon=f"{lon:.6f}")
             )
@@ -1527,9 +1705,7 @@ class iFakeGPSApp(ctk.CTk):
 
     def _apply_routing_settings(self):
         """Update routing service config."""
-        provider = self.provider_var.get()
-        api_key = self.ors_key_entry.get().strip()
-        self.routing_service = RoutingService(provider=provider, api_key=api_key)
+        self.routing_service = RoutingService(provider="osrm")
 
     def _calculate_navigation_route(self):
         """Fetch route from OSRM/ORS using the added markers."""
@@ -1598,6 +1774,254 @@ class iFakeGPSApp(ctk.CTk):
         messagebox.showerror(t("dialog_routing_error_title"), msg)
 
     # -------------------------------------------------------------
+    # Right Panel: Saved Locations and Routes
+    # -------------------------------------------------------------
+
+    def _clear_widget_children(self, widget):
+        for child in widget.winfo_children():
+            child.destroy()
+
+    def _get_entered_coordinates(self) -> tuple[float, float] | None:
+        try:
+            lat = float(self.lat_entry.get().strip())
+            lon = float(self.lon_entry.get().strip())
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise ValueError
+            return lat, lon
+        except ValueError:
+            messagebox.showerror(
+                t("dialog_invalid_coords_title"),
+                t("dialog_invalid_coords_msg"),
+            )
+            return None
+
+    def _get_location_to_save(self) -> tuple[float, float] | None:
+        if self.current_simulated_position is not None:
+            return self.current_simulated_position
+        return self._get_entered_coordinates()
+
+    def _save_current_location(self):
+        coords = self._get_location_to_save()
+        if coords is None:
+            return
+        lat, lon = coords
+        name = self.place_name_entry.get().strip()
+        if not name:
+            name = t("default_location_name", lat=f"{lat:.4f}", lon=f"{lon:.4f}")
+        self.location_storage.save(name, lat, lon)
+        self.place_name_entry.delete(0, "end")
+        self._refresh_saved_locations()
+        self.status_label.configure(text=t("status_location_saved", name=name))
+
+    def _refresh_saved_locations(self):
+        if not hasattr(self, "locations_list_frame"):
+            return
+        self._clear_widget_children(self.locations_list_frame)
+        locations = self.location_storage.list_all()
+        if not locations:
+            ctk.CTkLabel(
+                self.locations_list_frame,
+                text=t("empty_locations"),
+                text_color="gray",
+                justify="center",
+            ).grid(row=0, column=0, padx=10, pady=20, sticky="ew")
+            return
+
+        for row, location in enumerate(locations):
+            self._create_location_row(self.locations_list_frame, row, location)
+
+    def _create_location_row(self, parent, row: int, location: SavedLocationInfo):
+        item = ctk.CTkFrame(parent, fg_color="#1f2937")
+        item.grid(row=row, column=0, padx=4, pady=4, sticky="ew")
+        item.grid_columnconfigure(0, weight=1)
+
+        name_label = ctk.CTkLabel(
+            item,
+            text=location.name,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w",
+        )
+        name_label.grid(row=0, column=0, columnspan=3, padx=8, pady=(8, 0), sticky="ew")
+
+        coord_label = ctk.CTkLabel(
+            item,
+            text=f"{location.latitude:.6f}, {location.longitude:.6f}",
+            font=ctk.CTkFont(size=11, family="Consolas"),
+            text_color="gray",
+            anchor="w",
+        )
+        coord_label.grid(row=1, column=0, columnspan=3, padx=8, pady=(0, 6), sticky="ew")
+
+        actions = ctk.CTkFrame(item, fg_color="transparent")
+        actions.grid(row=2, column=0, columnspan=3, padx=8, pady=(0, 8), sticky="ew")
+        actions.grid_columnconfigure((0, 1, 2), weight=1, uniform="place_actions")
+
+        jump_btn = ctk.CTkButton(
+            actions,
+            text=ICON_CENTER,
+            font=ctk.CTkFont(family=ICON_FONT_FAMILY, size=15),
+            height=28,
+            width=44,
+            command=lambda loc=location: self._jump_to_saved_location(loc),
+            fg_color="#374151",
+            hover_color="#4b5563",
+        )
+        jump_btn.grid(row=0, column=0, padx=(0, 3), sticky="ew")
+        ToolTip(jump_btn, text=t("tip_place_jump"))
+
+        teleport_btn = ctk.CTkButton(
+            actions,
+            text=ICON_AIRPLANE,
+            font=ctk.CTkFont(family=ICON_FONT_FAMILY, size=15),
+            height=28,
+            width=44,
+            fg_color="#8b5cf6",
+            hover_color="#7c3aed",
+            command=lambda loc=location: self._teleport_saved_location(loc),
+        )
+        teleport_btn.grid(row=0, column=1, padx=3, sticky="ew")
+        ToolTip(teleport_btn, text=t("tip_place_teleport"))
+
+        delete_btn = ctk.CTkButton(
+            actions,
+            text=ICON_DELETE,
+            font=ctk.CTkFont(family=ICON_FONT_FAMILY, size=15),
+            height=28,
+            width=44,
+            fg_color="#6b7280",
+            hover_color="#4b5563",
+            command=lambda loc=location: self._delete_saved_location(loc),
+        )
+        delete_btn.grid(row=0, column=2, padx=(3, 0), sticky="ew")
+        ToolTip(delete_btn, text=t("tip_place_delete"))
+
+    def _jump_to_saved_location(self, location: SavedLocationInfo):
+        self.map_widget.set_position(location.latitude, location.longitude)
+        self.map_widget.set_zoom(15)
+        self.lat_entry.delete(0, "end")
+        self.lat_entry.insert(0, f"{location.latitude:.6f}")
+        self.lon_entry.delete(0, "end")
+        self.lon_entry.insert(0, f"{location.longitude:.6f}")
+        self.status_label.configure(text=t("status_location_selected", name=location.name))
+
+    def _teleport_saved_location(self, location: SavedLocationInfo):
+        self._jump_to_saved_location(location)
+        self._set_location_at(location.latitude, location.longitude)
+
+    def _delete_saved_location(self, location: SavedLocationInfo):
+        if messagebox.askyesno(
+            t("dialog_delete_location_title"),
+            t("dialog_delete_location_confirm_msg", name=location.name),
+        ):
+            self.location_storage.delete(location.id)
+            self._refresh_saved_locations()
+
+    def _refresh_saved_routes(self):
+        if not hasattr(self, "routes_list_frame"):
+            return
+        self._clear_widget_children(self.routes_list_frame)
+        routes = self.route_storage.list_all()
+        if not routes:
+            ctk.CTkLabel(
+                self.routes_list_frame,
+                text=t("dialog_no_routes_msg"),
+                text_color="gray",
+                justify="center",
+            ).grid(row=0, column=0, padx=10, pady=20, sticky="ew")
+            return
+
+        for row, route in enumerate(routes):
+            self._create_route_row(self.routes_list_frame, row, route)
+
+    def _create_route_row(self, parent, row: int, route: SavedRouteInfo):
+        item = ctk.CTkFrame(parent, fg_color="#1f2937")
+        item.grid(row=row, column=0, padx=4, pady=4, sticky="ew")
+        item.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            item,
+            text=route.name,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=2, padx=8, pady=(8, 0), sticky="ew")
+
+        ctk.CTkLabel(
+            item,
+            text=t(
+                "route_row_meta",
+                points=route.point_count,
+                created=route.created_at[:16],
+            ),
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+            anchor="w",
+        ).grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 6), sticky="ew")
+
+        ctk.CTkButton(
+            item,
+            text=t("btn_load_route"),
+            height=26,
+            command=lambda route_id=route.id: self._load_route_by_id(route_id),
+        ).grid(row=2, column=0, padx=(8, 3), pady=(0, 8), sticky="ew")
+
+        ctk.CTkButton(
+            item,
+            text=t("btn_delete_short"),
+            height=26,
+            width=64,
+            fg_color="#6b7280",
+            hover_color="#4b5563",
+            command=lambda r=route: self._delete_saved_route(r),
+        ).grid(row=2, column=1, padx=(3, 8), pady=(0, 8), sticky="ew")
+
+    def _load_route_by_id(self, route_id: int):
+        name, points = self.route_storage.load(route_id)
+        self._load_route_points(name, points)
+
+    def _load_route_points(self, name: str, points: list[RoutePoint]):
+        self._clear_route()
+
+        # Put them on map. Large calculated routes only get start/end markers.
+        if len(points) > 50:
+            points[0].marker = self.map_widget.set_marker(
+                points[0].latitude,
+                points[0].longitude,
+                text=t("marker_start"),
+                marker_color_circle="#10b981",
+            )
+            points[-1].marker = self.map_widget.set_marker(
+                points[-1].latitude,
+                points[-1].longitude,
+                text=t("marker_end"),
+                marker_color_circle="#ef4444",
+            )
+        else:
+            for i, p in enumerate(points):
+                p.marker = self.map_widget.set_marker(
+                    p.latitude,
+                    p.longitude,
+                    text=t("marker_point", index=i + 1),
+                    marker_color_circle="#3b82f6",
+                )
+
+        self.route_points = points
+        self._update_route_path()
+        self._update_route_info()
+
+        if points:
+            self.map_widget.set_position(points[0].latitude, points[0].longitude)
+
+        self.status_label.configure(text=t("status_route_loaded", name=name))
+
+    def _delete_saved_route(self, route: SavedRouteInfo):
+        if messagebox.askyesno(
+            t("dialog_delete_title"),
+            t("dialog_delete_confirm_msg", name=route.name),
+        ):
+            self.route_storage.delete(route.id)
+            self._refresh_saved_routes()
+
+    # -------------------------------------------------------------
     # Route Storage and GPX
     # -------------------------------------------------------------
 
@@ -1609,6 +2033,7 @@ class iFakeGPSApp(ctk.CTk):
         ).get_input()
         if name:
             self.route_storage.save(name, self.route_points)
+            self._refresh_saved_routes()
             messagebox.showinfo(
                 t("dialog_saved_title"),
                 t("dialog_saved_msg", name=name),
@@ -1665,41 +2090,8 @@ class iFakeGPSApp(ctk.CTk):
                 return
             route_id = routes[sel[0]].id
             name, points = self.route_storage.load(route_id)
-            self._clear_route()
-
-            # Put them on map (won't add markers for every point if it's large, just start/end)
-            if len(points) > 50:
-                points[0].marker = self.map_widget.set_marker(
-                    points[0].latitude,
-                    points[0].longitude,
-                    text=t("marker_start"),
-                    marker_color_circle="#10b981",
-                )
-                points[-1].marker = self.map_widget.set_marker(
-                    points[-1].latitude,
-                    points[-1].longitude,
-                    text=t("marker_end"),
-                    marker_color_circle="#ef4444",
-                )
-            else:
-                for i, p in enumerate(points):
-                    p.marker = self.map_widget.set_marker(
-                        p.latitude,
-                        p.longitude,
-                        text=t("marker_point", index=i + 1),
-                        marker_color_circle="#3b82f6",
-                    )
-
-            self.route_points = points
-            self._update_route_path()
-            self._update_route_info()
-
-            # Center map on start
-            if points:
-                self.map_widget.set_position(points[0].latitude, points[0].longitude)
-
+            self._load_route_points(name, points)
             top.destroy()
-            self.status_label.configure(text=t("status_route_loaded", name=name))
 
         def on_delete(event=None):
             sel = listbox.curselection()
@@ -1713,6 +2105,7 @@ class iFakeGPSApp(ctk.CTk):
                 self.route_storage.delete(routes[idx].id)
                 listbox.delete(idx)
                 routes.pop(idx)
+                self._refresh_saved_routes()
 
         btn_frm = ctk.CTkFrame(top, fg_color="transparent")
         btn_frm.pack(pady=10)
@@ -1807,9 +2200,7 @@ class iFakeGPSApp(ctk.CTk):
             val = float(self.speed_entry_var.get())
             if val < 0:
                 val = 0.0
-            if val > 1000:
-                val = 1000.0
-            self.speed_slider.set(val)
+            self.speed_slider.set(min(val, 110.0))
             self.route_walker.set_speed(val)
             self.speed_entry_var.set(f"{val:.1f}")
         except ValueError:
@@ -1874,6 +2265,7 @@ class iFakeGPSApp(ctk.CTk):
 
     def _update_walk_ui(self, lat: float, lon: float):
         """Safely update UI with new walk coordinates."""
+        self.current_simulated_position = (lat, lon)
         # Update current position marker
         if self.current_position_marker:
             self.current_position_marker.set_position(lat, lon)
@@ -1885,8 +2277,8 @@ class iFakeGPSApp(ctk.CTk):
                 marker_color_circle="#ef4444",
                 marker_color_outside="#b91c1c",
             )
-        # Center map on walker
-        self.map_widget.set_position(lat, lon)
+        if self.follow_current_position:
+            self.map_widget.set_position(lat, lon)
 
     def _on_walk_batch_complete(self):
         """Callback when current route batch is consumed (append-only still active)."""
@@ -1982,6 +2374,7 @@ class iFakeGPSApp(ctk.CTk):
     def _on_location_cleared(self, success: bool):
         """Called after location is cleared."""
         if success:
+            self.current_simulated_position = None
             self.status_label.configure(text=t("status_location_cleared"))
             if self.current_position_marker:
                 self.current_position_marker.delete()

@@ -35,19 +35,29 @@ class ToolTip:
         self._text = text
         self._tipwindow: tk.Toplevel | None = None
         self._after_id: str | None = None
+        self._pointer_xy: tuple[int, int] | None = None
 
         widget.bind("<Enter>", self._on_enter, add="+")
+        widget.bind("<Motion>", self._on_motion, add="+")
         widget.bind("<Leave>", self._on_leave, add="+")
         widget.bind("<ButtonPress>", self._on_leave, add="+")
 
     # ------------------------------------------------------------------
     def _on_enter(self, event=None):
+        self._remember_pointer(event)
         self._cancel()
         self._after_id = self._widget.after(self._DELAY_MS, self._show)
+
+    def _on_motion(self, event=None):
+        self._remember_pointer(event)
 
     def _on_leave(self, event=None):
         self._cancel()
         self._hide()
+
+    def _remember_pointer(self, event=None):
+        if event is not None and hasattr(event, "x_root") and hasattr(event, "y_root"):
+            self._pointer_xy = (event.x_root, event.y_root)
 
     def _cancel(self):
         if self._after_id:
@@ -59,10 +69,14 @@ class ToolTip:
         if self._tipwindow or not self._text:
             return
 
-        # Position: just below + right of the widget
+        # Position near the pointer. Widget-based root coordinates are unreliable
+        # for some CustomTkinter composites and scrollable/overlaid controls.
         try:
-            x = self._widget.winfo_rootx() + 20
-            y = self._widget.winfo_rooty() + self._widget.winfo_height() + 4
+            if self._pointer_xy is None:
+                self._pointer_xy = self._widget.winfo_pointerxy()
+            pointer_x, pointer_y = self._pointer_xy
+            x = pointer_x + 14
+            y = pointer_y + 18
         except tk.TclError:
             return
 
@@ -98,9 +112,12 @@ class ToolTip:
         tw_h = tw.winfo_reqheight()
 
         if x + tw_w > screen_w - 10:
-            x = screen_w - tw_w - 10
+            x = pointer_x - tw_w - 14
         if y + tw_h > screen_h - 10:
-            y = self._widget.winfo_rooty() - tw_h - 4
+            y = pointer_y - tw_h - 14
+
+        x = max(10, x)
+        y = max(10, y)
 
         tw.wm_geometry(f"+{x}+{y}")
         self._tipwindow = tw
