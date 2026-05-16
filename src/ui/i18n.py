@@ -133,6 +133,7 @@ _STRINGS["en"] = {
     "tip_follow_current_position": "Lock/unlock map follow during navigation",
     "tip_place_jump": "Jump map to this place",
     "tip_place_teleport": "Set GPS to this place",
+    "tip_place_navigate": "Plan a route from current position to this place",
     "tip_place_delete": "Delete this place",
     # --- Manual Coordinates ---
     "manual_coords": "📍 Manual Coordinates",
@@ -188,6 +189,7 @@ _STRINGS["en"] = {
     "status_location_clear_failed": "❌ Failed to clear location.",
     "status_opened_logs": "Opened log folder: {path}",
     "status_device_not_connected": "⚠️ Device not connected. Connect first.",
+    "status_navigation_from_current": "Planning route from current position to {name}...",
     # --- Tunneld status ---
     "status_checking_tunneld": "🔄 Checking tunneld service...",
     "status_tunneld_found": "✅ Tunneld found! Scanning devices...",
@@ -205,6 +207,10 @@ _STRINGS["en"] = {
     # --- Dialogs ---
     "dialog_not_connected_title": "Not Connected",
     "dialog_not_connected_msg": "Please connect to a device first.",
+    "dialog_current_position_required_title": "Current Position Required",
+    "dialog_current_position_required_msg": (
+        "Please set your current position first using Single Point teleport."
+    ),
     "dialog_invalid_route_title": "Invalid Route",
     "dialog_invalid_route_msg": "Please add at least 2 points to the route.",
     "dialog_invalid_coords_title": "Invalid Coordinates",
@@ -407,6 +413,7 @@ _STRINGS["zh_TW"] = {
     "tip_follow_current_position": "鎖定/解除導航時的地圖跟隨",
     "tip_place_jump": "將地圖跳轉到此地點",
     "tip_place_teleport": "將 GPS 設定到此地點",
+    "tip_place_navigate": "從目前位置規劃導航到此地點",
     "tip_place_delete": "刪除此地點",
     # --- Manual Coordinates ---
     "manual_coords": "📍 手動座標",
@@ -462,6 +469,7 @@ _STRINGS["zh_TW"] = {
     "status_location_clear_failed": "❌ 清除定位失敗。",
     "status_opened_logs": "已開啟 Log 資料夾：{path}",
     "status_device_not_connected": "⚠️ 裝置未連線，請先連線。",
+    "status_navigation_from_current": "正在從目前位置規劃到「{name}」的路線...",
     # --- Tunneld status ---
     "status_checking_tunneld": "🔄 正在檢查 tunneld 服務...",
     "status_tunneld_found": "✅ 已偵測到 tunneld！正在掃描裝置...",
@@ -479,6 +487,8 @@ _STRINGS["zh_TW"] = {
     # --- Dialogs ---
     "dialog_not_connected_title": "未連線",
     "dialog_not_connected_msg": "請先連線到裝置。",
+    "dialog_current_position_required_title": "需要目前位置",
+    "dialog_current_position_required_msg": "請先透過單點定位瞬間移動，設定目前位置。",
     "dialog_invalid_route_title": "路線無效",
     "dialog_invalid_route_msg": "請至少新增 2 個路線點。",
     "dialog_invalid_coords_title": "座標無效",

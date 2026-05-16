@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-05-16
+
+### Added
+- **地點導航快捷鍵**：右側「地點」清單新增導航按鈕，可從目前模擬位置直接規劃到已儲存地點的路線。
+
+### Fixed
+- **目前位置提示**：若尚未設定目前模擬位置就嘗試從地點導航，會提示使用者先透過單點定位設定目前位置，避免產生無效路線。
+
 ## [1.6.0] - 2026-05-02
 
 ### Added

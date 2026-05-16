@@ -35,6 +35,7 @@ ICON_LOCK = "\uE72E"
 ICON_UNLOCK = "\uE785"
 ICON_AIRPLANE = "\uE709"
 ICON_DELETE = "\uE74D"
+ICON_NAVIGATE = "\uE8B8"
 
 
 class iFakeGPSApp(ctk.CTk):
@@ -1854,7 +1855,7 @@ class iFakeGPSApp(ctk.CTk):
 
         actions = ctk.CTkFrame(item, fg_color="transparent")
         actions.grid(row=2, column=0, columnspan=3, padx=8, pady=(0, 8), sticky="ew")
-        actions.grid_columnconfigure((0, 1, 2), weight=1, uniform="place_actions")
+        actions.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="place_actions")
 
         jump_btn = ctk.CTkButton(
             actions,
@@ -1882,6 +1883,19 @@ class iFakeGPSApp(ctk.CTk):
         teleport_btn.grid(row=0, column=1, padx=3, sticky="ew")
         ToolTip(teleport_btn, text=t("tip_place_teleport"))
 
+        navigate_btn = ctk.CTkButton(
+            actions,
+            text=ICON_NAVIGATE,
+            font=ctk.CTkFont(family=ICON_FONT_FAMILY, size=15),
+            height=28,
+            width=44,
+            fg_color="#0ea5e9",
+            hover_color="#0284c7",
+            command=lambda loc=location: self._navigate_to_saved_location(loc),
+        )
+        navigate_btn.grid(row=0, column=2, padx=3, sticky="ew")
+        ToolTip(navigate_btn, text=t("tip_place_navigate"))
+
         delete_btn = ctk.CTkButton(
             actions,
             text=ICON_DELETE,
@@ -1892,7 +1906,7 @@ class iFakeGPSApp(ctk.CTk):
             hover_color="#4b5563",
             command=lambda loc=location: self._delete_saved_location(loc),
         )
-        delete_btn.grid(row=0, column=2, padx=(3, 0), sticky="ew")
+        delete_btn.grid(row=0, column=3, padx=(3, 0), sticky="ew")
         ToolTip(delete_btn, text=t("tip_place_delete"))
 
     def _jump_to_saved_location(self, location: SavedLocationInfo):
@@ -1907,6 +1921,26 @@ class iFakeGPSApp(ctk.CTk):
     def _teleport_saved_location(self, location: SavedLocationInfo):
         self._jump_to_saved_location(location)
         self._set_location_at(location.latitude, location.longitude)
+
+    def _navigate_to_saved_location(self, location: SavedLocationInfo):
+        if self.current_simulated_position is None:
+            self.status_label.configure(text=t("status_no_current_position"))
+            messagebox.showinfo(
+                t("dialog_current_position_required_title"),
+                t("dialog_current_position_required_msg"),
+            )
+            return
+
+        start_lat, start_lon = self.current_simulated_position
+        self.mode_var.set("navigation")
+        self._on_mode_change()
+        self._clear_route()
+        self._add_route_point(start_lat, start_lon)
+        self._add_route_point(location.latitude, location.longitude)
+        self.status_label.configure(
+            text=t("status_navigation_from_current", name=location.name)
+        )
+        self._calculate_navigation_route()
 
     def _delete_saved_location(self, location: SavedLocationInfo):
         if messagebox.askyesno(
