@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-06-06
+
+### Changed
+- **地點儲存流程優化**：新增「選取地點儲存」模式，按下後會提示使用者在地圖上選取要儲存的地點，並在確認後才寫入儲存清單，避免誤存目前模擬位置。
+- **目前 GPS 快速儲存**：新增「儲存目前 GPS」入口，讓使用者可以明確儲存目前模擬中的位置。
+
 ## [1.6.1] - 2026-05-16
 
 ### Added

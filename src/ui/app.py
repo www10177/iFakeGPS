@@ -109,6 +109,8 @@ class iFakeGPSApp(ctk.CTk):
         self.route_path = None  # Map path object
         self.current_position_marker = None
         self.current_simulated_position: tuple[float, float] | None = None
+        self.is_selecting_saved_location = False
+        self.save_location_preview_marker = None
         self.follow_current_position = True
         self.discovered_devices: list[DeviceInfo] = []
         self.right_panel_visible = True
@@ -842,13 +844,27 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.place_name_entry.grid(row=0, column=0, padx=8, pady=(8, 4), sticky="ew")
 
+        location_actions = ctk.CTkFrame(tab, fg_color="transparent")
+        location_actions.grid(row=1, column=0, padx=8, pady=4, sticky="ew")
+        location_actions.grid_columnconfigure((0, 1), weight=1)
+
         self.btn_save_location = ctk.CTkButton(
-            tab,
+            location_actions,
             text=t("btn_save_location"),
-            command=self._save_current_location,
+            command=self._toggle_saved_location_selection,
             height=30,
         )
-        self.btn_save_location.grid(row=1, column=0, padx=8, pady=4, sticky="ew")
+        self.btn_save_location.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+
+        self.btn_save_current_position = ctk.CTkButton(
+            location_actions,
+            text=t("btn_save_current_position"),
+            command=self._save_current_simulated_location,
+            height=30,
+            fg_color="#374151",
+            hover_color="#4b5563",
+        )
+        self.btn_save_current_position.grid(row=0, column=1, padx=(4, 0), sticky="ew")
 
         self.location_hint_label = ctk.CTkLabel(
             tab,
@@ -1171,7 +1187,15 @@ class iFakeGPSApp(ctk.CTk):
         if hasattr(self, "place_name_entry"):
             self.place_name_entry.configure(placeholder_text=t("placeholder_location_name"))
         if hasattr(self, "btn_save_location"):
-            self.btn_save_location.configure(text=t("btn_save_location"))
+            self.btn_save_location.configure(
+                text=(
+                    t("btn_cancel_save_location")
+                    if self.is_selecting_saved_location
+                    else t("btn_save_location")
+                )
+            )
+        if hasattr(self, "btn_save_current_position"):
+            self.btn_save_current_position.configure(text=t("btn_save_current_position"))
         if hasattr(self, "location_hint_label"):
             self.location_hint_label.configure(text=t("location_panel_hint"))
         if hasattr(self, "btn_jump_current_position"):
@@ -1477,6 +1501,10 @@ class iFakeGPSApp(ctk.CTk):
         self.lat_entry.insert(0, f"{lat:.6f}")
         self.lon_entry.delete(0, "end")
         self.lon_entry.insert(0, f"{lon:.6f}")
+
+        if self.is_selecting_saved_location:
+            self._confirm_save_selected_location(lat, lon)
+            return
 
         if self.mode == AppMode.SINGLE_POINT:
             # Single point mode - show confirmation before teleporting
@@ -1796,23 +1824,97 @@ class iFakeGPSApp(ctk.CTk):
             )
             return None
 
-    def _get_location_to_save(self) -> tuple[float, float] | None:
-        if self.current_simulated_position is not None:
-            return self.current_simulated_position
-        return self._get_entered_coordinates()
-
-    def _save_current_location(self):
-        coords = self._get_location_to_save()
-        if coords is None:
-            return
-        lat, lon = coords
+    def _get_place_name(self, lat: float, lon: float) -> str:
         name = self.place_name_entry.get().strip()
-        if not name:
-            name = t("default_location_name", lat=f"{lat:.4f}", lon=f"{lon:.4f}")
+        if name:
+            return name
+        return t("default_location_name", lat=f"{lat:.4f}", lon=f"{lon:.4f}")
+
+    def _save_location(self, lat: float, lon: float):
+        name = self._get_place_name(lat, lon)
         self.location_storage.save(name, lat, lon)
         self.place_name_entry.delete(0, "end")
         self._refresh_saved_locations()
         self.status_label.configure(text=t("status_location_saved", name=name))
+
+    def _toggle_saved_location_selection(self):
+        if self.is_selecting_saved_location:
+            self.status_label.configure(text=t("status_location_save_cancelled"))
+            self._set_saved_location_selection_mode(False)
+        else:
+            self._set_saved_location_selection_mode(True)
+
+    def _set_saved_location_selection_mode(self, enabled: bool):
+        self.is_selecting_saved_location = enabled
+        if enabled:
+            self.status_label.configure(text=t("status_select_saved_location"))
+            if hasattr(self, "btn_save_location"):
+                self.btn_save_location.configure(text=t("btn_cancel_save_location"))
+            return
+
+        if self.save_location_preview_marker:
+            self.save_location_preview_marker.delete()
+            self.save_location_preview_marker = None
+        if hasattr(self, "btn_save_location"):
+            self.btn_save_location.configure(text=t("btn_save_location"))
+
+    def _confirm_save_selected_location(self, lat: float, lon: float):
+        if self.save_location_preview_marker:
+            self.save_location_preview_marker.delete()
+
+        self.save_location_preview_marker = self.map_widget.set_marker(
+            lat,
+            lon,
+            text=t("marker_save_place"),
+            marker_color_circle="#10b981",
+            marker_color_outside="#047857",
+        )
+
+        should_save = messagebox.askyesno(
+            t("dialog_confirm_save_location_title"),
+            t(
+                "dialog_confirm_save_location_msg",
+                lat=f"{lat:.6f}",
+                lon=f"{lon:.6f}",
+            ),
+            icon="question",
+        )
+
+        if should_save:
+            self._save_location(lat, lon)
+        else:
+            self.status_label.configure(text=t("status_location_save_cancelled"))
+
+        self._set_saved_location_selection_mode(False)
+
+    def _save_current_simulated_location(self):
+        if self.current_simulated_position is None:
+            self.status_label.configure(text=t("status_no_current_position"))
+            messagebox.showinfo(
+                t("dialog_current_position_required_title"),
+                t("dialog_current_position_required_msg"),
+            )
+            return
+        lat, lon = self.current_simulated_position
+        if not messagebox.askyesno(
+            t("dialog_confirm_save_location_title"),
+            t(
+                "dialog_confirm_save_current_location_msg",
+                lat=f"{lat:.6f}",
+                lon=f"{lon:.6f}",
+            ),
+            icon="question",
+        ):
+            self.status_label.configure(text=t("status_location_save_cancelled"))
+            return
+        self._save_location(lat, lon)
+
+    def _save_current_location(self):
+        coords = self._get_entered_coordinates()
+        if coords is None:
+            return
+        lat, lon = coords
+        self._save_location(lat, lon)
 
     def _refresh_saved_locations(self):
         if not hasattr(self, "locations_list_frame"):
