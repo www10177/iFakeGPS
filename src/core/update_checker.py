@@ -1,5 +1,6 @@
 import importlib.metadata
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -45,7 +46,10 @@ def is_newer_version(latest: str, current: str) -> bool:
 
 def _read_version_from_changelog() -> Optional[str]:
     try:
-        root = Path(__file__).resolve().parents[2]
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            root = Path(sys._MEIPASS)
+        else:
+            root = Path(__file__).resolve().parents[2]
         changelog = root / "CHANGELOG.md"
         if not changelog.exists():
             return None

@@ -18,9 +18,13 @@ from src.core.route_walker import RouteWalker
 from src.core.routing import RoutingError, RoutingService
 from src.core.tunnel_manager import TunneldManager
 from src.ui.caching_map_view import CachingTileMapView
+from src.ui.coordinate_inputs import (
+    parse_coordinate_pair,
+    parse_optional_coordinate_pair,
+)
 from src.ui.i18n import LANGUAGES, get_lang, set_lang, t
 from src.ui.tooltip import ToolTip, add_tooltip_button
-from src.utils.logger import get_log_dir, logger
+from src.utils.logger import get_log_file_path, logger
 
 
 class AppMode(Enum):
@@ -219,6 +223,8 @@ class iFakeGPSApp(ctk.CTk):
 
     def _check_dev_mode(self):
         """Check developer mode status."""
+        if not hasattr(self, "dev_status_indicator"):
+            return
         self.dev_status_indicator.configure(text="🔄 Checking...", text_color="orange")
         self.update()  # Force update
 
@@ -230,6 +236,8 @@ class iFakeGPSApp(ctk.CTk):
 
     def _update_dev_mode_ui(self, enabled: Optional[bool]):
         """Update the Developer Mode UI based on status."""
+        if not hasattr(self, "dev_status_indicator"):
+            return
         if enabled is True:
             self.dev_status_indicator.configure(
                 text=t("dev_status_enabled"), text_color="#22c55e"
@@ -300,7 +308,7 @@ class iFakeGPSApp(ctk.CTk):
                         t("dialog_wireless_title"), t("status_wireless_enabled")
                     ),
                 )
-                # After enabling wireless, the current USB tunnel might become invalid or 
+                # After enabling wireless, the current USB tunnel might become invalid or
                 # user is instructed to unplug. Reset UI to disconnected state.
                 self.after(0, self._disconnect_device)
             else:
@@ -360,50 +368,9 @@ class iFakeGPSApp(ctk.CTk):
         )
         subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 10))
 
-        # Developer Mode Status Section
-        dev_mode_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        dev_mode_frame.grid(row=3, column=0, padx=20, pady=(0, 15), sticky="ew")
-        dev_mode_frame.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            dev_mode_frame,
-            text=t("dev_mode_label"),
-            font=ctk.CTkFont(size=12, weight="bold"),
-        ).grid(row=0, column=0, sticky="w")
-
-        self.dev_status_indicator = ctk.CTkLabel(
-            dev_mode_frame, text=t("dev_status_unknown"), font=ctk.CTkFont(size=12)
-        )
-        self.dev_status_indicator.grid(row=0, column=1, sticky="e")
-
-        self.dev_check_btn = ctk.CTkButton(
-            dev_mode_frame,
-            text=t("dev_check_btn"),
-            width=80,
-            height=24,
-            font=ctk.CTkFont(size=11),
-            command=self._check_dev_mode,
-        )
-        self.dev_check_btn.grid(row=1, column=0, columnspan=2, pady=(5, 0), sticky="ew")
-
-        self.dev_enable_btn = ctk.CTkButton(
-            dev_mode_frame,
-            text=t("dev_enable_btn"),
-            width=80,
-            height=24,
-            fg_color="#ef4444",
-            hover_color="#dc2626",
-            font=ctk.CTkFont(size=11),
-            command=self._enable_dev_mode_flow,
-        )
-        self.dev_enable_btn.grid(
-            row=2, column=0, columnspan=2, pady=(5, 0), sticky="ew"
-        )
-        self.dev_enable_btn.grid_remove()  # Hidden by default
-
         # Device selection section
         device_frame = ctk.CTkFrame(sidebar)
-        device_frame.grid(row=4, column=0, padx=15, pady=10, sticky="ew")
+        device_frame.grid(row=3, column=0, padx=15, pady=10, sticky="ew")
 
         device_header = ctk.CTkFrame(device_frame, fg_color="transparent")
         device_header.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
@@ -479,7 +446,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Mode selection
         mode_frame = ctk.CTkFrame(sidebar)
-        mode_frame.grid(row=5, column=0, padx=15, pady=10, sticky="ew")
+        mode_frame.grid(row=4, column=0, padx=15, pady=10, sticky="ew")
 
         ctk.CTkLabel(
             mode_frame, text=t("mode_label"), font=ctk.CTkFont(size=16, weight="bold")
@@ -507,7 +474,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Route controls
         self.route_frame = ctk.CTkFrame(sidebar)
-        self.route_frame.grid(row=6, column=0, padx=15, pady=5, sticky="ew")
+        self.route_frame.grid(row=5, column=0, padx=15, pady=5, sticky="ew")
 
         self.lbl_route = ctk.CTkLabel(
             self.route_frame,
@@ -676,7 +643,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Coordinates section
         self.coord_frame = ctk.CTkFrame(sidebar)
-        self.coord_frame.grid(row=7, column=0, padx=15, pady=5, sticky="ew")
+        self.coord_frame.grid(row=6, column=0, padx=15, pady=5, sticky="ew")
 
         self.lbl_manual = ctk.CTkLabel(
             self.coord_frame,
@@ -692,9 +659,7 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.lbl_lat.grid(row=1, column=0, padx=10, pady=2, sticky="w")
 
-        self.lat_entry = ctk.CTkEntry(
-            self.coord_frame, placeholder_text="37.7749", height=24
-        )
+        self.lat_entry = ctk.CTkEntry(self.coord_frame, height=24)
         self.lat_entry.grid(row=1, column=1, padx=10, pady=2, sticky="ew")
 
         self.lbl_lon = ctk.CTkLabel(
@@ -702,9 +667,7 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.lbl_lon.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
-        self.lon_entry = ctk.CTkEntry(
-            self.coord_frame, placeholder_text="-122.4194", height=24
-        )
+        self.lon_entry = ctk.CTkEntry(self.coord_frame, height=24)
         self.lon_entry.grid(row=2, column=1, padx=10, pady=2, sticky="ew")
 
         self.coord_frame.grid_columnconfigure(1, weight=1)
@@ -730,19 +693,8 @@ class iFakeGPSApp(ctk.CTk):
             height=30,
         )
         self.clear_location_btn.grid(
-            row=8, column=0, padx=15, pady=(5, 5), sticky="ew"
+            row=7, column=0, padx=15, pady=(5, 5), sticky="ew"
         )
-
-        # Open logs folder button
-        self.open_logs_btn = ctk.CTkButton(
-            sidebar,
-            text=t("btn_open_logs"),
-            command=self._open_logs_folder,
-            fg_color="#374151",
-            hover_color="#4b5563",
-            height=30,
-        )
-        self.open_logs_btn.grid(row=9, column=0, padx=15, pady=(0, 5), sticky="ew")
 
         # Info label at bottom
         info_label = ctk.CTkLabel(
@@ -753,11 +705,11 @@ class iFakeGPSApp(ctk.CTk):
             justify="left",
         )
         self.info_label = info_label
-        info_label.grid(row=11, column=0, padx=15, pady=(20, 5), sticky="sw")
+        info_label.grid(row=9, column=0, padx=15, pady=(20, 5), sticky="sw")
 
         # Language selector
         lang_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        lang_frame.grid(row=12, column=0, padx=15, pady=(0, 15), sticky="sw")
+        lang_frame.grid(row=10, column=0, padx=15, pady=(0, 15), sticky="sw")
 
         self.lang_label = ctk.CTkLabel(
             lang_frame, text=t("lang_label"), font=ctk.CTkFont(size=11)
@@ -780,6 +732,18 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.lang_combo.set(current_name)
         self.lang_combo.pack(side="left", padx=(5, 0))
+
+        self.log_viewer_btn = ctk.CTkButton(
+            lang_frame,
+            text=t("btn_show_logs"),
+            command=self._show_log_viewer,
+            width=36,
+            height=24,
+            fg_color="#374151",
+            hover_color="#4b5563",
+            font=ctk.CTkFont(size=11),
+        )
+        self.log_viewer_btn.pack(side="left", padx=(6, 0))
 
     def _create_right_panel(self):
         """Create the foldable right panel for saved places and routes."""
@@ -837,34 +801,64 @@ class iFakeGPSApp(ctk.CTk):
 
     def _build_places_tab(self, tab):
         tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(3, weight=1)
+        tab.grid_rowconfigure(5, weight=1)
 
         self.place_name_entry = ctk.CTkEntry(
             tab, placeholder_text=t("placeholder_location_name"), height=30
         )
         self.place_name_entry.grid(row=0, column=0, padx=8, pady=(8, 4), sticky="ew")
 
+        place_coords = ctk.CTkFrame(tab, fg_color="transparent")
+        place_coords.grid(row=1, column=0, padx=8, pady=4, sticky="ew")
+        place_coords.grid_columnconfigure((1, 3), weight=1)
+
+        ctk.CTkLabel(
+            place_coords, text=t("label_lat"), font=ctk.CTkFont(size=11)
+        ).grid(row=0, column=0, padx=(0, 4), sticky="w")
+        self.place_lat_entry = ctk.CTkEntry(place_coords, height=28)
+        self.place_lat_entry.grid(row=0, column=1, padx=(0, 8), sticky="ew")
+        self.place_lat_entry.bind("<Return>", self._on_place_coordinate_entry_change)
+        self.place_lat_entry.bind("<FocusOut>", self._on_place_coordinate_entry_change)
+
+        ctk.CTkLabel(
+            place_coords, text=t("label_lon"), font=ctk.CTkFont(size=11)
+        ).grid(row=0, column=2, padx=(0, 4), sticky="w")
+        self.place_lon_entry = ctk.CTkEntry(place_coords, height=28)
+        self.place_lon_entry.grid(row=0, column=3, sticky="ew")
+        self.place_lon_entry.bind("<Return>", self._on_place_coordinate_entry_change)
+        self.place_lon_entry.bind("<FocusOut>", self._on_place_coordinate_entry_change)
+
         location_actions = ctk.CTkFrame(tab, fg_color="transparent")
-        location_actions.grid(row=1, column=0, padx=8, pady=4, sticky="ew")
+        location_actions.grid(row=2, column=0, padx=8, pady=4, sticky="ew")
         location_actions.grid_columnconfigure((0, 1), weight=1)
 
-        self.btn_save_location = ctk.CTkButton(
+        self.btn_pick_location_on_map = ctk.CTkButton(
             location_actions,
-            text=t("btn_save_location"),
+            text=t("btn_pick_location_on_map"),
             command=self._toggle_saved_location_selection,
-            height=30,
-        )
-        self.btn_save_location.grid(row=0, column=0, padx=(0, 4), sticky="ew")
-
-        self.btn_save_current_position = ctk.CTkButton(
-            location_actions,
-            text=t("btn_save_current_position"),
-            command=self._save_current_simulated_location,
             height=30,
             fg_color="#374151",
             hover_color="#4b5563",
         )
-        self.btn_save_current_position.grid(row=0, column=1, padx=(4, 0), sticky="ew")
+        self.btn_pick_location_on_map.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+
+        self.btn_use_current_position = ctk.CTkButton(
+            location_actions,
+            text=t("btn_use_current_position"),
+            command=self._fill_place_coordinates_from_current_position,
+            height=30,
+            fg_color="#374151",
+            hover_color="#4b5563",
+        )
+        self.btn_use_current_position.grid(row=0, column=1, padx=(4, 0), sticky="ew")
+
+        self.btn_save_location = ctk.CTkButton(
+            tab,
+            text=t("btn_save_location"),
+            command=self._save_current_location,
+            height=30,
+        )
+        self.btn_save_location.grid(row=3, column=0, padx=8, pady=4, sticky="ew")
 
         self.location_hint_label = ctk.CTkLabel(
             tab,
@@ -874,10 +868,10 @@ class iFakeGPSApp(ctk.CTk):
             justify="left",
             wraplength=270,
         )
-        self.location_hint_label.grid(row=2, column=0, padx=8, pady=(2, 8), sticky="ew")
+        self.location_hint_label.grid(row=4, column=0, padx=8, pady=(2, 8), sticky="ew")
 
         self.locations_list_frame = ctk.CTkScrollableFrame(tab, fg_color="#111827")
-        self.locations_list_frame.grid(row=3, column=0, padx=8, pady=4, sticky="nsew")
+        self.locations_list_frame.grid(row=5, column=0, padx=8, pady=4, sticky="nsew")
         self.locations_list_frame.grid_columnconfigure(0, weight=1)
 
     def _build_routes_tab(self, tab):
@@ -1142,11 +1136,6 @@ class iFakeGPSApp(ctk.CTk):
                 self.conn_status.configure(text=t("conn_not_connected"))
         if hasattr(self, "disconnect_btn"):
             self.disconnect_btn.configure(text=t("btn_disconnect"))
-        if hasattr(self, "dev_check_btn"):
-            self.dev_check_btn.configure(text=t("dev_check_btn"))
-        if hasattr(self, "dev_enable_btn"):
-            self.dev_enable_btn.configure(text=t("dev_enable_btn"))
-
         # Mode
         if hasattr(self, "single_radio"):
             self.single_radio.configure(text=t("mode_single"))
@@ -1187,15 +1176,17 @@ class iFakeGPSApp(ctk.CTk):
         if hasattr(self, "place_name_entry"):
             self.place_name_entry.configure(placeholder_text=t("placeholder_location_name"))
         if hasattr(self, "btn_save_location"):
-            self.btn_save_location.configure(
+            self.btn_save_location.configure(text=t("btn_save_location"))
+        if hasattr(self, "btn_pick_location_on_map"):
+            self.btn_pick_location_on_map.configure(
                 text=(
                     t("btn_cancel_save_location")
                     if self.is_selecting_saved_location
-                    else t("btn_save_location")
+                    else t("btn_pick_location_on_map")
                 )
             )
-        if hasattr(self, "btn_save_current_position"):
-            self.btn_save_current_position.configure(text=t("btn_save_current_position"))
+        if hasattr(self, "btn_use_current_position"):
+            self.btn_use_current_position.configure(text=t("btn_use_current_position"))
         if hasattr(self, "location_hint_label"):
             self.location_hint_label.configure(text=t("location_panel_hint"))
         if hasattr(self, "btn_jump_current_position"):
@@ -1231,8 +1222,8 @@ class iFakeGPSApp(ctk.CTk):
             self.btn_teleport.configure(text=t("btn_teleport"))
         if hasattr(self, "clear_location_btn"):
             self.clear_location_btn.configure(text=t("btn_clear_location"))
-        if hasattr(self, "open_logs_btn"):
-            self.open_logs_btn.configure(text=t("btn_open_logs"))
+        if hasattr(self, "log_viewer_btn"):
+            self.log_viewer_btn.configure(text=t("btn_show_logs"))
 
         # Info label
         if hasattr(self, "info_label"):
@@ -1322,7 +1313,7 @@ class iFakeGPSApp(ctk.CTk):
         # Refresh device list
         self.after(0, self._refresh_devices)
         # Check dev mode
-        self.after(1000, self._check_dev_mode)
+        # Developer Mode controls are intentionally not shown in the main UI.
 
     def _on_tunneld_status_change(self, running: bool):
         """Called when tunneld status changes."""
@@ -1503,7 +1494,7 @@ class iFakeGPSApp(ctk.CTk):
         self.lon_entry.insert(0, f"{lon:.6f}")
 
         if self.is_selecting_saved_location:
-            self._confirm_save_selected_location(lat, lon)
+            self._use_selected_location_for_place(lat, lon)
             return
 
         if self.mode == AppMode.SINGLE_POINT:
@@ -1812,17 +1803,89 @@ class iFakeGPSApp(ctk.CTk):
 
     def _get_entered_coordinates(self) -> tuple[float, float] | None:
         try:
-            lat = float(self.lat_entry.get().strip())
-            lon = float(self.lon_entry.get().strip())
-            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-                raise ValueError
-            return lat, lon
+            return parse_coordinate_pair(self.lat_entry.get(), self.lon_entry.get())
         except ValueError:
             messagebox.showerror(
                 t("dialog_invalid_coords_title"),
                 t("dialog_invalid_coords_msg"),
             )
             return None
+
+    def _get_place_coordinates(self) -> tuple[float, float] | None:
+        try:
+            return parse_coordinate_pair(
+                self.place_lat_entry.get(), self.place_lon_entry.get()
+            )
+        except ValueError:
+            messagebox.showerror(
+                t("dialog_invalid_coords_title"),
+                t("dialog_invalid_coords_msg"),
+            )
+            return None
+
+    def _set_place_coordinate_entries(self, lat: float, lon: float):
+        self.place_lat_entry.delete(0, "end")
+        self.place_lat_entry.insert(0, f"{lat:.6f}")
+        self.place_lon_entry.delete(0, "end")
+        self.place_lon_entry.insert(0, f"{lon:.6f}")
+
+    def _show_save_location_preview_marker(self, lat: float, lon: float):
+        if self.save_location_preview_marker:
+            self.save_location_preview_marker.delete()
+        self.save_location_preview_marker = self.map_widget.set_marker(
+            lat,
+            lon,
+            text=t("marker_save_place"),
+            marker_color_circle="#10b981",
+            marker_color_outside="#047857",
+        )
+
+    def _preview_place_coordinates(self, lat: float, lon: float):
+        self.map_widget.set_position(lat, lon)
+        self.map_widget.set_zoom(15)
+        self._show_save_location_preview_marker(lat, lon)
+        self.status_label.configure(
+            text=t(
+                "status_location_coordinates_filled",
+                lat=f"{lat:.6f}",
+                lon=f"{lon:.6f}",
+            )
+        )
+
+    def _on_place_coordinate_entry_change(self, event=None):
+        try:
+            coords = parse_optional_coordinate_pair(
+                self.place_lat_entry.get(), self.place_lon_entry.get()
+            )
+        except ValueError:
+            messagebox.showerror(
+                t("dialog_invalid_coords_title"),
+                t("dialog_invalid_coords_msg"),
+            )
+            return
+
+        if coords is None:
+            return
+
+        lat, lon = coords
+        self._preview_place_coordinates(lat, lon)
+
+    def _use_selected_location_for_place(self, lat: float, lon: float):
+        self._set_place_coordinate_entries(lat, lon)
+        self._preview_place_coordinates(lat, lon)
+        self._set_saved_location_selection_mode(False, clear_preview=False)
+
+    def _fill_place_coordinates_from_current_position(self):
+        if self.current_simulated_position is None:
+            self.status_label.configure(text=t("status_no_current_position"))
+            messagebox.showinfo(
+                t("dialog_current_position_required_title"),
+                t("dialog_current_position_required_msg"),
+            )
+            return
+        lat, lon = self.current_simulated_position
+        self._set_place_coordinate_entries(lat, lon)
+        self._preview_place_coordinates(lat, lon)
 
     def _get_place_name(self, lat: float, lon: float) -> str:
         name = self.place_name_entry.get().strip()
@@ -1834,6 +1897,11 @@ class iFakeGPSApp(ctk.CTk):
         name = self._get_place_name(lat, lon)
         self.location_storage.save(name, lat, lon)
         self.place_name_entry.delete(0, "end")
+        self.place_lat_entry.delete(0, "end")
+        self.place_lon_entry.delete(0, "end")
+        if self.save_location_preview_marker:
+            self.save_location_preview_marker.delete()
+            self.save_location_preview_marker = None
         self._refresh_saved_locations()
         self.status_label.configure(text=t("status_location_saved", name=name))
 
@@ -1844,19 +1912,23 @@ class iFakeGPSApp(ctk.CTk):
         else:
             self._set_saved_location_selection_mode(True)
 
-    def _set_saved_location_selection_mode(self, enabled: bool):
+    def _set_saved_location_selection_mode(
+        self, enabled: bool, clear_preview: bool = True
+    ):
         self.is_selecting_saved_location = enabled
         if enabled:
             self.status_label.configure(text=t("status_select_saved_location"))
-            if hasattr(self, "btn_save_location"):
-                self.btn_save_location.configure(text=t("btn_cancel_save_location"))
+            if hasattr(self, "btn_pick_location_on_map"):
+                self.btn_pick_location_on_map.configure(
+                    text=t("btn_cancel_save_location")
+                )
             return
 
-        if self.save_location_preview_marker:
+        if clear_preview and self.save_location_preview_marker:
             self.save_location_preview_marker.delete()
             self.save_location_preview_marker = None
-        if hasattr(self, "btn_save_location"):
-            self.btn_save_location.configure(text=t("btn_save_location"))
+        if hasattr(self, "btn_pick_location_on_map"):
+            self.btn_pick_location_on_map.configure(text=t("btn_pick_location_on_map"))
 
     def _confirm_save_selected_location(self, lat: float, lon: float):
         if self.save_location_preview_marker:
@@ -1910,7 +1982,7 @@ class iFakeGPSApp(ctk.CTk):
         self._save_location(lat, lon)
 
     def _save_current_location(self):
-        coords = self._get_entered_coordinates()
+        coords = self._get_place_coordinates()
         if coords is None:
             return
         lat, lon = coords
@@ -2474,11 +2546,7 @@ class iFakeGPSApp(ctk.CTk):
     def _set_manual_location(self):
         """Set location from manual coordinates."""
         try:
-            lat = float(self.lat_entry.get().strip())
-            lon = float(self.lon_entry.get().strip())
-
-            if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
-                raise ValueError("Invalid coordinate range")
+            lat, lon = parse_coordinate_pair(self.lat_entry.get(), self.lon_entry.get())
 
             # Center map on location
             self.map_widget.set_position(lat, lon)
@@ -2518,20 +2586,56 @@ class iFakeGPSApp(ctk.CTk):
         else:
             self.status_label.configure(text=t("status_location_clear_failed"))
 
-    def _open_logs_folder(self):
-        """Open the log directory for troubleshooting."""
+    def _show_log_viewer(self):
+        """Show recent application log output in a small GUI window."""
         try:
-            log_dir = str(get_log_dir())
-            if sys.platform == "win32":
-                os.startfile(log_dir)
-            else:
-                import subprocess
+            log_window = ctk.CTkToplevel(self)
+            log_window.title(t("log_viewer_title"))
+            log_window.geometry("900x520")
+            log_window.transient(self)
 
-                opener = "open" if sys.platform == "darwin" else "xdg-open"
-                subprocess.call([opener, log_dir])
-            self.status_label.configure(text=t("status_opened_logs", path=log_dir))
+            log_window.grid_columnconfigure(0, weight=1)
+            log_window.grid_rowconfigure(0, weight=1)
+
+            textbox = ctk.CTkTextbox(
+                log_window,
+                font=ctk.CTkFont(family="Consolas", size=11),
+                wrap="none",
+            )
+            textbox.grid(row=0, column=0, padx=10, pady=(10, 6), sticky="nsew")
+
+            actions = ctk.CTkFrame(log_window, fg_color="transparent")
+            actions.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+            actions.grid_columnconfigure(0, weight=1)
+
+            def load_log():
+                path = get_log_file_path()
+                if not path.exists():
+                    content = t("log_empty")
+                else:
+                    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                    content = "\n".join(lines[-500:]) or t("log_empty")
+                textbox.configure(state="normal")
+                textbox.delete("1.0", "end")
+                textbox.insert("1.0", content)
+                textbox.see("end")
+                textbox.configure(state="disabled")
+
+            refresh_btn = ctk.CTkButton(
+                actions,
+                text=t("btn_refresh_log"),
+                command=load_log,
+                width=110,
+                height=28,
+                fg_color="#374151",
+                hover_color="#4b5563",
+            )
+            refresh_btn.grid(row=0, column=1, sticky="e")
+
+            load_log()
+            self.status_label.configure(text=t("status_opened_log_viewer"))
         except Exception as e:
-            logger.error("Failed to open log folder: %s", e, exc_info=True)
+            logger.error("Failed to open log viewer: %s", e, exc_info=True)
             messagebox.showerror(
                 t("dialog_log_open_failed_title"),
                 t("dialog_log_open_failed_msg", error=e),

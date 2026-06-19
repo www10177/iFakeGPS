@@ -49,12 +49,13 @@ echo [INFO] Generating PyInstaller spec file with UAC admin manifest...
 
 uv run python -m PyInstaller ^
     --onefile ^
-    --console ^
+    --windowed ^
     --uac-admin ^
     --name "iFakeGPS" ^
     --icon "app.ico" ^
     --add-data "docs;docs" ^
     --add-data "app.ico;." ^
+    --add-data "CHANGELOG.md;." ^
     --hidden-import=PIL ^
     --hidden-import=PIL._tkinter_finder ^
     --hidden-import=tkintermapview ^
@@ -83,6 +84,7 @@ uv run python -m PyInstaller ^
     --copy-metadata readchar ^
     --copy-metadata inquirer3 ^
     --copy-metadata pymobiledevice3 ^
+    --copy-metadata ifakegps ^
     src/main.py
 
 if %errorLevel% neq 0 (
