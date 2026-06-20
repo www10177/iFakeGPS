@@ -67,7 +67,7 @@ This project uses `uv` for dependency management and execution.
 
 8.  **Device Screen Preview (burst capture)**:
     *   `src/core/screenshot_service.py` (`ScreenshotService`) grabs device screenshots via the DVT `Screenshot` instrument. It opens its OWN `DvtSecureSocketProxyService` (separate from the one `DeviceManager` keeps for location simulation) so frame grabs never race with location updates on the same socket; the channel is reused across frames and reset on error.
-    *   UI: a floating `CTkToplevel` (not embedded in the main 3-pane layout) driven by a daemon worker thread that captures → PIL-decodes → posts a `CTkImage` back via `self.after`. Throttled to ~1–2 fps (user-selectable). Opened from the 📱 button in the map toolbar; closed via `_close_device_preview`, which `_on_close` also calls to release the DVT channel on exit.
+    *   UI: a floating `CTkToplevel` (not embedded in the main 3-pane layout) driven by a daemon worker thread that captures → PIL-decodes → downscales (off the UI thread) → posts a `CTkImage` back via `self.after`. Throttled to ~1–2 fps (user-selectable). The worker pauses while the window is minimized, and fits the frame to the window size tracked via `<Configure>` (avoids clipping). Opened from the **"裝置畫面預覽" button in the device-selection section** of the sidebar; closed via `_close_device_preview`, which `_on_close` also calls to release the DVT channel on exit.
     *   This is pseudo-realtime (burst), not smooth video — pymobiledevice3 has no live H.264 screen stream.
 
 9.  **Release & Changelog Rules (CI Parsed)**:

@@ -281,6 +281,7 @@ _STRINGS["en"] = {
         "Open the release page to download it manually?"
     ),
     # --- Device screen preview (burst capture) ---
+    "btn_device_preview": "Device Preview",
     "tip_device_preview": "Show device screen preview",
     "preview_window_title": "Device Screen Preview",
     "preview_not_connected": "Connect to a device first.",
@@ -598,6 +599,7 @@ _STRINGS["zh_TW"] = {
         "是否開啟下載頁面手動下載？"
     ),
     # --- 裝置畫面預覽（連拍）---
+    "btn_device_preview": "裝置畫面預覽",
     "tip_device_preview": "顯示裝置畫面預覽",
     "preview_window_title": "裝置畫面預覽",
     "preview_not_connected": "請先連接裝置。",

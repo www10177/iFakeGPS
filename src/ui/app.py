@@ -48,7 +48,6 @@ ICON_UNLOCK = "\uE785"
 ICON_AIRPLANE = "\uE709"
 ICON_DELETE = "\uE74D"
 ICON_NAVIGATE = "\uE8B8"
-ICON_PHONE = "\uE8EA"
 
 
 class iFakeGPSApp(ctk.CTk):
@@ -126,6 +125,8 @@ class iFakeGPSApp(ctk.CTk):
         self._preview_status_label = None
         self._preview_ctk_image = None  # keep a ref so Tk doesn't GC the frame
         self._preview_interval = 0.7  # seconds between frames (~1.5 fps)
+        self._preview_box = (340, 660)  # available (w, h) for the image, kept in sync
+        self._preview_visible = True  # paused when the window is minimized
 
         # Build UI
         self._create_ui()
@@ -444,6 +445,17 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.enable_wireless_btn.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="ew")
         add_tooltip_button(device_frame, text=t("tip_wireless")).grid(row=4, column=0, padx=(0, 10), sticky="e")
+
+        # Device screen preview (requires a connected device)
+        self.btn_device_preview = ctk.CTkButton(
+            device_frame,
+            text=f"📱  {t('btn_device_preview')}",
+            command=self._open_device_preview,
+            fg_color="#374151",
+            hover_color="#4b5563",
+            height=28,
+        )
+        self.btn_device_preview.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="ew")
 
         # Mode selection
         mode_frame = ctk.CTkFrame(sidebar)
@@ -1003,19 +1015,6 @@ class iFakeGPSApp(ctk.CTk):
         ToolTip(self.btn_follow_current_position, text=t("tip_follow_current_position"))
         self._update_follow_button_state()
 
-        self.btn_device_preview = ctk.CTkButton(
-            map_toolbar,
-            text=ICON_PHONE,
-            font=ctk.CTkFont(family=ICON_FONT_FAMILY, size=16),
-            width=34,
-            height=30,
-            command=self._open_device_preview,
-            fg_color="#374151",
-            hover_color="#4b5563",
-        )
-        self.btn_device_preview.grid(row=0, column=2, padx=(3, 6), pady=6)
-        ToolTip(self.btn_device_preview, text=t("tip_device_preview"))
-
     def _set_default_location(self):
         """Try to set map position based on Windows Location API, with IP fallback."""
 
@@ -1151,6 +1150,8 @@ class iFakeGPSApp(ctk.CTk):
                 self.conn_status.configure(text=t("conn_not_connected"))
         if hasattr(self, "disconnect_btn"):
             self.disconnect_btn.configure(text=t("btn_disconnect"))
+        if hasattr(self, "btn_device_preview"):
+            self.btn_device_preview.configure(text=f"📱  {t('btn_device_preview')}")
         # Mode
         if hasattr(self, "single_radio"):
             self.single_radio.configure(text=t("mode_single"))
@@ -2739,11 +2740,22 @@ class iFakeGPSApp(ctk.CTk):
 
         self._preview_window = win
         self._preview_stop_event = threading.Event()
+        self._preview_visible = True
         win.protocol("WM_DELETE_WINDOW", self._close_device_preview)
+        # Track the window size (to fit the image) and minimized state (to pause).
+        win.bind("<Configure>", self._on_preview_configure)
+        win.bind("<Unmap>", lambda e: e.widget is win and setattr(self, "_preview_visible", False))
+        win.bind("<Map>", lambda e: e.widget is win and setattr(self, "_preview_visible", True))
 
         threading.Thread(
             target=self._preview_loop, args=(self._preview_stop_event,), daemon=True
         ).start()
+
+    def _on_preview_configure(self, event):
+        # Only the toplevel's own resize matters; derive the image box from it,
+        # reserving space for the rate controls + status row below the image.
+        if self._preview_window is not None and event.widget is self._preview_window:
+            self._preview_box = (max(event.width - 24, 100), max(event.height - 96, 100))
 
     def _on_preview_rate_change(self, value: str):
         mapping = {
@@ -2754,16 +2766,28 @@ class iFakeGPSApp(ctk.CTk):
         self._preview_interval = mapping.get(value, 0.7)
 
     def _preview_loop(self, stop_event: threading.Event):
-        """Background worker: grab → decode → post to UI, until stopped."""
+        """Background worker: grab → decode → downscale → post to UI, until stopped.
+
+        Decoding and resizing happen here (off the UI thread). Capture is skipped
+        while the window is minimized so it doesn't burn USB/CPU when not visible.
+        """
+        from PIL import Image
+
         errors = 0
         while not stop_event.is_set():
+            if not self._preview_visible:
+                stop_event.wait(0.3)
+                continue
             try:
                 png = self._screenshot_service.capture_png()
                 errors = 0
-                from PIL import Image
-
                 img = Image.open(io.BytesIO(png))
                 img.load()
+                # Fit to the current window box here so the UI thread only swaps
+                # the already-sized frame (no resize work on the main loop).
+                box_w, box_h = self._preview_box
+                w, h = self._fit_size(img.width, img.height, box_w, box_h)
+                img = img.resize((w, h))
                 self.after(0, lambda im=img: self._update_preview_image(im))
             except Exception as e:
                 errors += 1
@@ -2776,14 +2800,13 @@ class iFakeGPSApp(ctk.CTk):
     def _update_preview_image(self, pil_image):
         if self._preview_window is None or not self._preview_window.winfo_exists():
             return
-        label = self._preview_image_label
-        box_w = max(label.winfo_width() - 4, 100)
-        box_h = max(label.winfo_height() - 4, 100)
-        w, h = self._fit_size(pil_image.width, pil_image.height, box_w, box_h)
+        # pil_image is already sized to fit by the worker; just wrap and show it.
         self._preview_ctk_image = ctk.CTkImage(
-            light_image=pil_image, dark_image=pil_image, size=(w, h)
+            light_image=pil_image,
+            dark_image=pil_image,
+            size=(pil_image.width, pil_image.height),
         )
-        label.configure(image=self._preview_ctk_image, text="")
+        self._preview_image_label.configure(image=self._preview_ctk_image, text="")
         if self._preview_status_label is not None:
             self._preview_status_label.configure(text="")
 
