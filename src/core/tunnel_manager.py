@@ -8,12 +8,8 @@ from typing import Optional
 
 import requests
 
+from src.core.constants import TUNNELD_PORT, TUNNELD_URL
 from src.utils.logger import logger
-
-# Port the tunneld HTTP API listens on. Used both to detect a running instance
-# and to hunt down orphaned tunneld processes that still hold the port (and,
-# in the frozen exe, a lock on iFakeGPS.exe itself).
-TUNNELD_PORT = 49151
 
 
 class TunneldManager:
@@ -50,7 +46,7 @@ class TunneldManager:
         """Check if tunneld is already running by trying to connect to its API."""
         try:
             # The tunneld API uses / (root) endpoint, not /list-tunnels
-            response = requests.get(f"http://127.0.0.1:{TUNNELD_PORT}/", timeout=1)
+            response = requests.get(TUNNELD_URL, timeout=1)
             return response.status_code == 200
         except Exception:
             return False

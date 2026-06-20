@@ -1,22 +1,14 @@
 import logging
-import os
 import sys
 import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-APP_NAME = "iFakeGPS"
+from src.utils.paths import APP_NAME, get_app_data_dir
+
 LOG_FILENAME = "ifakegps.log"
 
-
-def get_app_data_dir() -> Path:
-    """Return the per-user application data directory."""
-    if sys.platform == "win32":
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if local_app_data:
-            return Path(local_app_data) / APP_NAME
-        return Path.home() / "AppData" / "Local" / APP_NAME
-    return Path.home() / ".cache" / APP_NAME
+__all__ = ["APP_NAME", "get_app_data_dir", "get_log_dir", "get_log_file_path", "logger"]
 
 
 def get_log_dir() -> Path:

@@ -1,8 +1,6 @@
 import multiprocessing
 import sys
 
-import customtkinter as ctk
-
 from src.ui.app import iFakeGPSApp
 from src.utils.logger import logger
 
@@ -19,7 +17,7 @@ def main():
             import tkinter.messagebox
 
             tkinter.messagebox.showerror("Critical Error", f"Application crashed:\n{e}")
-        except:
+        except Exception:
             pass
         sys.exit(1)
 

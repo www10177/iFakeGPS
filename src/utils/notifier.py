@@ -5,9 +5,9 @@ Strategy (in order of preference):
   1. winsdk toast with Windows sound
 """
 
+import os
 import sys
 import threading
-import os
 from xml.sax.saxutils import escape
 
 from src.utils.logger import logger

@@ -25,6 +25,7 @@ from typing import Callable, Optional
 import requests
 
 from src.utils.logger import logger
+from src.utils.paths import is_frozen
 
 # Below this the download is almost certainly an error page, not the ~58 MB exe.
 _MIN_EXE_BYTES = 1_000_000
@@ -32,7 +33,7 @@ _MIN_EXE_BYTES = 1_000_000
 
 def is_supported() -> bool:
     """True only when running as the frozen Windows exe (the only updatable form)."""
-    return sys.platform == "win32" and bool(getattr(sys, "frozen", False))
+    return sys.platform == "win32" and is_frozen()
 
 
 def current_exe_path() -> str:

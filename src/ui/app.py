@@ -10,6 +10,11 @@ from typing import Optional
 import customtkinter as ctk
 
 from src.core import update_checker, updater
+from src.core.constants import (
+    DEFAULT_MAP_POSITION,
+    DEFAULT_TILE_SERVER,
+    TILE_SERVERS,
+)
 from src.core.device_manager import DeviceManager
 from src.core.location_storage import LocationStorage, SavedLocationInfo
 from src.core.models import DeviceInfo, RoutePoint
@@ -25,6 +30,7 @@ from src.ui.coordinate_inputs import (
 from src.ui.i18n import LANGUAGES, get_lang, set_lang, t
 from src.ui.tooltip import ToolTip, add_tooltip_button
 from src.utils.logger import get_log_file_path, logger
+from src.utils.paths import get_cache_dir, resource_path
 
 
 class AppMode(Enum):
@@ -58,14 +64,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Set icon
         try:
-            if getattr(sys, "frozen", False):
-                application_path = sys._MEIPASS
-            else:
-                application_path = os.path.dirname(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                )
-
-            icon_path = os.path.join(application_path, "app.ico")
+            icon_path = resource_path("app.ico")
             if os.path.exists(icon_path):
                 self._icon_path = icon_path
                 self.iconbitmap(icon_path)
@@ -92,19 +91,16 @@ class iFakeGPSApp(ctk.CTk):
             batch_completion_callback=self._on_walk_batch_complete,
             disconnect_callback=self._on_walk_device_disconnected,
         )
-        # Note: RouteWalker constructor signature changed in our new core implementation
-        # Reviewing core/route_walker.py: __init__(self, device_manager, update_callback, completion_callback=None)
-        # So we pass callbacks in constructor now, simplified from property setters.
-
-        # Setup Database paths (shared by map cache and route storage)
-        local_app_data = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-        self.cache_dir = os.path.join(local_app_data, "iFakeGPS", "cache")
-        os.makedirs(self.cache_dir, exist_ok=True)
+        # Setup database paths under the per-user cache dir.
+        self.cache_dir = str(get_cache_dir())
         self.db_path = os.path.join(self.cache_dir, "map_cache.db")
 
-        # Initialize Routing & Storage
-        self.route_storage = RouteStorage(os.path.join(self.cache_dir, "routes.db"))
-        self.location_storage = LocationStorage(os.path.join(self.cache_dir, "routes.db"))
+        # Saved routes and saved locations share one SQLite file (distinct tables).
+        # The file is named "routes.db" for historical reasons / backward compat —
+        # do not rename it or existing users lose their saved data.
+        store_db = os.path.join(self.cache_dir, "routes.db")
+        self.route_storage = RouteStorage(store_db)
+        self.location_storage = LocationStorage(store_db)
         self.routing_service = RoutingService()
 
         # State
@@ -184,14 +180,7 @@ class iFakeGPSApp(ctk.CTk):
         # Button to open full manual
         def open_manual():
             try:
-                if getattr(sys, "frozen", False):
-                    base_path = sys._MEIPASS
-                else:
-                    # We are in src/ui/app.py, project root is two levels up
-                    current_dir = os.path.dirname(os.path.abspath(__file__))
-                    base_path = os.path.abspath(os.path.join(current_dir, "..", ".."))
-
-                manual_path = os.path.join(base_path, "docs", "USER_MANUAL_ZH.md")
+                manual_path = resource_path("docs", "USER_MANUAL_ZH.md")
 
                 if not os.path.exists(manual_path):
                     # Fallback check
@@ -957,14 +946,15 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.map_widget.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        # Set Google Maps as default tile server
+        # Set the default tile server (see constants.TILE_SERVERS)
+        default_tiles = TILE_SERVERS[DEFAULT_TILE_SERVER]
         self.map_widget.set_tile_server(
-            "https://mt1.google.com/vt/lyrs=m&hl=zh-TW&x={x}&y={y}&z={z}",
-            max_zoom=19,
+            default_tiles["url"],
+            max_zoom=default_tiles["max_zoom"],
         )
 
-        # Set default position (Taipei as fallback)
-        self.map_widget.set_position(25.032192, 121.469360)
+        # Set default position (see constants.DEFAULT_MAP_POSITION — Taipei fallback)
+        self.map_widget.set_position(*DEFAULT_MAP_POSITION)
         self.map_widget.set_zoom(13)
 
         # Try to get real location from IP
@@ -1723,10 +1713,6 @@ class iFakeGPSApp(ctk.CTk):
         self.speed_entry_var.set(f"{speed_kmh:.1f}")
         self.route_walker.set_speed(speed_kmh)
 
-    def _apply_routing_settings(self):
-        """Update routing service config."""
-        self.routing_service = RoutingService(provider="osrm")
-
     def _calculate_navigation_route(self):
         """Fetch route from OSRM/ORS using the added markers."""
         if len(self.route_points) < 2:
@@ -1929,57 +1915,6 @@ class iFakeGPSApp(ctk.CTk):
             self.save_location_preview_marker = None
         if hasattr(self, "btn_pick_location_on_map"):
             self.btn_pick_location_on_map.configure(text=t("btn_pick_location_on_map"))
-
-    def _confirm_save_selected_location(self, lat: float, lon: float):
-        if self.save_location_preview_marker:
-            self.save_location_preview_marker.delete()
-
-        self.save_location_preview_marker = self.map_widget.set_marker(
-            lat,
-            lon,
-            text=t("marker_save_place"),
-            marker_color_circle="#10b981",
-            marker_color_outside="#047857",
-        )
-
-        should_save = messagebox.askyesno(
-            t("dialog_confirm_save_location_title"),
-            t(
-                "dialog_confirm_save_location_msg",
-                lat=f"{lat:.6f}",
-                lon=f"{lon:.6f}",
-            ),
-            icon="question",
-        )
-
-        if should_save:
-            self._save_location(lat, lon)
-        else:
-            self.status_label.configure(text=t("status_location_save_cancelled"))
-
-        self._set_saved_location_selection_mode(False)
-
-    def _save_current_simulated_location(self):
-        if self.current_simulated_position is None:
-            self.status_label.configure(text=t("status_no_current_position"))
-            messagebox.showinfo(
-                t("dialog_current_position_required_title"),
-                t("dialog_current_position_required_msg"),
-            )
-            return
-        lat, lon = self.current_simulated_position
-        if not messagebox.askyesno(
-            t("dialog_confirm_save_location_title"),
-            t(
-                "dialog_confirm_save_current_location_msg",
-                lat=f"{lat:.6f}",
-                lon=f"{lon:.6f}",
-            ),
-            icon="question",
-        ):
-            self.status_label.configure(text=t("status_location_save_cancelled"))
-            return
-        self._save_location(lat, lon)
 
     def _save_current_location(self):
         coords = self._get_place_coordinates()
@@ -2246,86 +2181,6 @@ class iFakeGPSApp(ctk.CTk):
                 t("dialog_saved_title"),
                 t("dialog_saved_msg", name=name),
             )
-
-    def _load_route_dialog(self):
-        routes = self.route_storage.list_all()
-        if not routes:
-            messagebox.showinfo(t("dialog_info_title"), t("dialog_no_routes_msg"))
-            return
-
-        # Use CTkToplevel to keep dark-theme text/background readable.
-        import tkinter as tk
-
-        top = ctk.CTkToplevel(self)
-        top.title(t("dialog_load_title"))
-        top.geometry("460x340")
-        top.configure(fg_color="#0f172a")
-        top.transient(self)
-        top.grab_set()
-
-        ctk.CTkLabel(
-            top,
-            text=t("dialog_load_msg"),
-            text_color="#e5e7eb",
-            justify="left",
-            wraplength=420,
-        ).pack(padx=10, pady=(10, 6), anchor="w")
-
-        listbox = tk.Listbox(
-            top,
-            font=("Segoe UI", 12),
-            bg="#020617",
-            fg="#f8fafc",
-            selectbackground="#0ea5e9",
-            selectforeground="#ffffff",
-            highlightthickness=1,
-            highlightbackground="#1e293b",
-            highlightcolor="#38bdf8",
-            relief="flat",
-            borderwidth=0,
-            activestyle="none",
-        )
-        listbox.pack(fill="both", expand=True, padx=10, pady=6)
-
-        for r in routes:
-            listbox.insert(
-                "end", f"{r.name} ({r.point_count} pts) - {r.created_at[:16]}"
-            )
-
-        def on_load():
-            sel = listbox.curselection()
-            if not sel:
-                return
-            route_id = routes[sel[0]].id
-            name, points = self.route_storage.load(route_id)
-            self._load_route_points(name, points)
-            top.destroy()
-
-        def on_delete(event=None):
-            sel = listbox.curselection()
-            if not sel:
-                return
-            idx = sel[0]
-            if messagebox.askyesno(
-                t("dialog_delete_title"),
-                t("dialog_delete_confirm_msg", name=routes[idx].name),
-            ):
-                self.route_storage.delete(routes[idx].id)
-                listbox.delete(idx)
-                routes.pop(idx)
-                self._refresh_saved_routes()
-
-        btn_frm = ctk.CTkFrame(top, fg_color="transparent")
-        btn_frm.pack(pady=10)
-        ctk.CTkButton(btn_frm, text=t("btn_load_route"), command=on_load).pack(
-            side="left", padx=5
-        )
-        ctk.CTkButton(btn_frm, text=t("btn_delete_route"), command=on_delete).pack(
-            side="left", padx=5
-        )
-
-        listbox.bind("<Double-Button-1>", lambda e: on_load())
-        listbox.bind("<Button-3>", on_delete)
 
     def _export_gpx_dialog(self):
         if not self.route_points:
@@ -2665,66 +2520,6 @@ class iFakeGPSApp(ctk.CTk):
         except Exception as e:
             logger.warning("Notification registration check failed: %s", e)
 
-    def _search_location(self, event=None):
-        """Search for a location using Nominatim geocoding."""
-        query = self.search_entry.get().strip()
-        if not query:
-            return
-
-        self.status_label.configure(text=f"Searching for: {query}...")
-        self.update()
-
-        def search():
-            try:
-                import requests
-
-                # Use Nominatim with proper User-Agent (required by OSM)
-                version = update_checker.get_current_version()
-                headers = {"User-Agent": f"iFakeGPS/{version} (iOS Location Simulator)"}
-                params = {"q": query, "format": "json", "limit": 1}
-
-                response = requests.get(
-                    "https://nominatim.openstreetmap.org/search",
-                    headers=headers,
-                    params=params,
-                    timeout=10,
-                )
-
-                if response.status_code == 200:
-                    results = response.json()
-                    if results:
-                        lat = float(results[0]["lat"])
-                        lon = float(results[0]["lon"])
-                        display_name = results[0].get("display_name", query)
-
-                        # Update map on main thread
-                        self.after(
-                            0, lambda: self._on_search_result(lat, lon, display_name)
-                        )
-                    else:
-                        self.after(
-                            0,
-                            lambda: self.status_label.configure(
-                                text=f"Location not found: {query}"
-                            ),
-                        )
-                else:
-                    self.after(
-                        0,
-                        lambda: self.status_label.configure(
-                            text=f"Search failed: HTTP {response.status_code}"
-                        ),
-                    )
-
-            except Exception as e:
-                logger.error(f"Search error: {e}")
-                self.after(
-                    0,
-                    lambda: self.status_label.configure(text=f"Search error: {query}"),
-                )
-
-        threading.Thread(target=search, daemon=True).start()
-
     def _check_for_updates_on_startup(self):
         """Check latest GitHub release and prompt user to open download page."""
 
@@ -2854,37 +2649,6 @@ class iFakeGPSApp(ctk.CTk):
         # Close cleanly so tunneld/device handles are released and the helper can
         # overwrite the now-unlocked exe, then relaunch.
         self._on_close()
-
-    def _on_search_result(self, lat: float, lon: float, display_name: str):
-        """Handle search result on main thread."""
-        self.map_widget.set_position(lat, lon)
-        self.map_widget.set_zoom(15)
-        self.lat_entry.delete(0, "end")
-        self.lat_entry.insert(0, f"{lat:.6f}")
-        self.lon_entry.delete(0, "end")
-        self.lon_entry.insert(0, f"{lon:.6f}")
-
-        # Truncate display name if too long
-        if len(display_name) > 50:
-            display_name = display_name[:47] + "..."
-        self.status_label.configure(text=f"📍 {display_name}")
-
-    def _change_map_type(self, map_type: str):
-        """Change the map tile source."""
-        if map_type == "OpenStreetMap":
-            self.map_widget.set_tile_server(
-                "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-            )
-        elif map_type == "Google normal":
-            self.map_widget.set_tile_server(
-                "https://mt0.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&s=Ga",
-                max_zoom=22,
-            )
-        elif map_type == "Google satellite":
-            self.map_widget.set_tile_server(
-                "https://mt0.google.com/vt/lyrs=s&hl=en&x={x}&y={y}&z={z}&s=Ga",
-                max_zoom=22,
-            )
 
     def _on_close(self):
         """Handle window close."""

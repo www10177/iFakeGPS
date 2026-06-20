@@ -1,7 +1,6 @@
 import asyncio
 import threading
-import time
-from typing import List, Optional
+from typing import Optional
 
 import requests
 from pymobiledevice3.lockdown import create_using_usbmux
@@ -17,6 +16,7 @@ from pymobiledevice3.services.dvt.instruments.location_simulation import (
 )
 from pymobiledevice3.usbmux import list_devices
 
+from src.core.constants import TUNNELD_URL
 from src.core.models import DeviceInfo
 from src.utils.logger import logger
 
@@ -37,7 +37,30 @@ class DeviceManager:
         self._location_sim = None
 
     @staticmethod
-    def discover_devices() -> List[DeviceInfo]:
+    def _run_coroutine(coro):
+        """Run an awaitable to completion on a throwaway event loop.
+
+        pymobiledevice3 methods are sync on some transports and async (coroutine)
+        on others; callers guard with ``asyncio.iscoroutine`` before calling this.
+        """
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    def _resolve_target_udid(self, udid: Optional[str] = None) -> Optional[str]:
+        """Pick the device to act on: explicit arg → current device → first USB device."""
+        if udid:
+            return udid
+        if self.current_device:
+            return self.current_device.udid
+        devices = list_devices()
+        return devices[0].serial if devices else None
+
+    @staticmethod
+    def discover_devices() -> list[DeviceInfo]:
         """
         Discover connected iOS devices via tunneld.
         Returns a list of DeviceInfo objects.
@@ -46,14 +69,14 @@ class DeviceManager:
         try:
             # Try to get devices from tunneld HTTP API (root endpoint /)
             try:
-                response = requests.get("http://127.0.0.1:49151/", timeout=2)
+                response = requests.get(TUNNELD_URL, timeout=2)
                 if response.status_code == 200:
                     tunnels_data = response.json()
                     # Response format: {UDID: [{tunnel-address, tunnel-port, interface}, ...]}
                     for udid, tunnel_list in tunnels_data.items():
                         if not tunnel_list:
                             continue
-                        
+
                         # Iterate through all available tunnels for this device
                         if not isinstance(tunnel_list, list):
                             tunnel_list = [tunnel_list]
@@ -82,8 +105,12 @@ class DeviceManager:
                                             lockdown.product_version or ios_version
                                         )
                                         lockdown.close()
-                                    except Exception:
-                                        pass
+                                    except Exception as e:
+                                        logger.debug(
+                                            "Could not read lockdown info for %s: %s",
+                                            udid[:8],
+                                            e,
+                                        )
 
                                     device_info = DeviceInfo(
                                         udid=udid,
@@ -101,7 +128,7 @@ class DeviceManager:
                             except Exception as e:
                                 logger.warning(f"Failed to parse tunnel info: {e}")
             except requests.exceptions.ConnectionError:
-                logger.warning("tunneld HTTP API not available on port 49151")
+                logger.warning("tunneld HTTP API not available at %s", TUNNELD_URL)
             except Exception as e:
                 logger.warning(f"Failed to get devices from tunneld API: {e}")
 
@@ -111,7 +138,7 @@ class DeviceManager:
         return devices
 
     @staticmethod
-    def discover_devices_via_browse() -> List[DeviceInfo]:
+    def discover_devices_via_browse() -> list[DeviceInfo]:
         """
         Alternative discovery using usbmux to find connected devices.
         Gets device name from lockdown and checks for tunnel availability.
@@ -149,7 +176,7 @@ class DeviceManager:
                     rsd_port = 0
                     interface = ""
                     try:
-                        response = requests.get("http://127.0.0.1:49151/", timeout=2)
+                        response = requests.get(TUNNELD_URL, timeout=2)
                         if response.status_code == 200:
                             tunnels = response.json()
                             if usb_dev.serial in tunnels:
@@ -163,8 +190,8 @@ class DeviceManager:
                                     rsd_address = tunnel_info.get("tunnel-address", "")
                                     rsd_port = tunnel_info.get("tunnel-port", 0)
                                     interface = tunnel_info.get("interface", "")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Could not query tunneld for tunnel info: %s", e)
 
                     # Only add device if we have valid RSD address
                     if rsd_address and rsd_port:
@@ -204,14 +231,9 @@ class DeviceManager:
                     try:
                         close_result = self.service_provider.close()
                         if asyncio.iscoroutine(close_result):
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            try:
-                                loop.run_until_complete(close_result)
-                            finally:
-                                loop.close()
-                    except Exception:
-                        pass
+                            self._run_coroutine(close_result)
+                    except Exception as e:
+                        logger.debug("Error closing previous connection: %s", e)
                     self.service_provider = None
 
                 # Create RSD connection
@@ -222,12 +244,7 @@ class DeviceManager:
                 # Handle async connect
                 connect_result = self.service_provider.connect()
                 if asyncio.iscoroutine(connect_result):
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        loop.run_until_complete(connect_result)
-                    finally:
-                        loop.close()
+                    self._run_coroutine(connect_result)
 
                 self.current_device = device
                 self.connected = True
@@ -274,8 +291,8 @@ class DeviceManager:
         if self._dvt_service is not None:
             try:
                 self._dvt_service.__exit__(None, None, None)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Error closing DVT service: %s", e)
             self._dvt_service = None
             self._location_sim = None
 
@@ -312,14 +329,9 @@ class DeviceManager:
                 try:
                     close_result = self.service_provider.close()
                     if asyncio.iscoroutine(close_result):
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            loop.run_until_complete(close_result)
-                        finally:
-                            loop.close()
-                except Exception:
-                    pass
+                        self._run_coroutine(close_result)
+                except Exception as e:
+                    logger.debug("Error closing connection on disconnect: %s", e)
                 self.service_provider = None
             self.connected = False
             self.current_device = None
@@ -328,16 +340,7 @@ class DeviceManager:
     def check_developer_mode(self, udid: str = None) -> Optional[bool]:
         """Check developer mode status."""
         try:
-            target_udid = udid
-            if not target_udid and self.current_device:
-                target_udid = self.current_device.udid
-
-            if not target_udid:
-                # Attempt to discover first USB device
-                devices = list_devices()
-                if devices:
-                    target_udid = devices[0].serial
-
+            target_udid = self._resolve_target_udid(udid)
             if not target_udid:
                 return None
 
@@ -350,15 +353,7 @@ class DeviceManager:
     def enable_developer_mode(self, udid: str = None) -> bool:
         """trigger enable developer mode."""
         try:
-            target_udid = udid
-            if not target_udid and self.current_device:
-                target_udid = self.current_device.udid
-
-            if not target_udid:
-                devices = list_devices()
-                if devices:
-                    target_udid = devices[0].serial
-
+            target_udid = self._resolve_target_udid(udid)
             if not target_udid:
                 return False
 
@@ -373,15 +368,7 @@ class DeviceManager:
     def enable_wireless_connection(self, udid: str = None) -> bool:
         """Enable wireless (Wi-Fi) connection for the device."""
         try:
-            target_udid = udid
-            if not target_udid and self.current_device:
-                target_udid = self.current_device.udid
-
-            if not target_udid:
-                devices = list_devices()
-                if devices:
-                    target_udid = devices[0].serial
-
+            target_udid = self._resolve_target_udid(udid)
             if not target_udid:
                 logger.error("No device target for wireless enablement")
                 return False
@@ -406,15 +393,12 @@ class DeviceManager:
         try:
             from pymobiledevice3.services.mobile_image_mounter import auto_mount
 
-            target_udid = udid
-            if not target_udid and self.current_device:
-                target_udid = self.current_device.udid
+            try:
+                from pymobiledevice3.exceptions import AlreadyMountedError
+            except Exception:  # name/location may vary across versions
+                AlreadyMountedError = ()
 
-            if not target_udid:
-                devices = list_devices()
-                if devices:
-                    target_udid = devices[0].serial
-
+            target_udid = self._resolve_target_udid(udid)
             if not target_udid:
                 return False
 
@@ -427,9 +411,13 @@ class DeviceManager:
             try:
                 loop.run_until_complete(_run_async_mount())
                 return True
-            except Exception as e:
-                logger.warning(f"Auto-mount warning: {e}")
+            except AlreadyMountedError:
+                # Already mounted is success for our purposes (image is present).
+                logger.info("Developer Disk Image already mounted")
                 return True
+            except Exception as e:
+                logger.warning(f"Auto-mount failed: {e}")
+                return False
             finally:
                 loop.close()
         except Exception as e:

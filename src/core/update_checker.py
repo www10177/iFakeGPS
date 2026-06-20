@@ -1,15 +1,15 @@
 import importlib.metadata
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import requests
 
+from src.core.constants import GITHUB_REPO
 from src.utils.logger import logger
+from src.utils.paths import resource_path
 
-GITHUB_REPO = "www10177/iFakeGPS"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 
@@ -48,11 +48,7 @@ def is_newer_version(latest: str, current: str) -> bool:
 
 def _read_version_from_changelog() -> Optional[str]:
     try:
-        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-            root = Path(sys._MEIPASS)
-        else:
-            root = Path(__file__).resolve().parents[2]
-        changelog = root / "CHANGELOG.md"
+        changelog = Path(resource_path("CHANGELOG.md"))
         if not changelog.exists():
             return None
         for line in changelog.read_text(encoding="utf-8").splitlines():
