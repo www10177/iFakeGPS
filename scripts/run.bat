@@ -15,12 +15,12 @@ powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
 exit /b
 
 :run
-cd /d "%~dp0"
+:: cd to the project root (this script lives in scripts/)
+cd /d "%~dp0.."
 echo Starting iFakeGPS...
 echo.
 
-:: Activate venv and run the app
-:: call .venv\Scripts\activate.bat
-uv run python run.py
+:: uv run resolves the project from the root and puts deps on the path
+uv run python scripts/run.py
 
 pause

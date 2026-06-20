@@ -115,20 +115,19 @@ cd ifakegps
 # Using uv (recommended)
 uv sync
 
-# Or using pip
+# Or using pip (installs deps from pyproject.toml)
 python -m venv .venv
 .venv\Scripts\activate  # Windows
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Running from Source
 
 ```bash
-# Using uv
-uv run python ifakegps.py
+# Using uv (recommended)
+uv run python scripts/run.py
 
-# Or directly (requires admin for iOS 17+)
-python ifakegps.py
+# Or double-click scripts/run.bat — it self-elevates to admin (needed for iOS 17+)
 ```
 
 ### Manual Tunnel Setup (Advanced)
@@ -155,11 +154,8 @@ pymobiledevice3 mounter auto-mount
 ### Building Windows Executable
 
 ```bash
-# Using batch file
-pack.bat
-
-# Or using Python
-python pack.py
+# Builds from iFakeGPS.spec (the single source of truth, shared with CI)
+scripts/pack.bat
 ```
 
 Output: `dist/iFakeGPS.exe` (auto-requests admin privileges)

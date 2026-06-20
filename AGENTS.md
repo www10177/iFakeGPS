@@ -7,10 +7,10 @@ This project uses `uv` for dependency management and execution.
 1.  **Usage of `uv`**:
     *   ALWAYS use `uv` for managing dependencies and running the application or scripts.
     *   Do NOT use `pip` directly unless absolutely necessary (and justified).
-    *   To run the app: `uv run ifakegps.py` or `uv run ifakegps` (if installed as script).
+    *   To run the app from source: `uv run python scripts/run.py` (or double-click `scripts/run.bat`, which self-elevates to admin).
     *   To add packages: `uv add <package_name>`
     *   To add dev packages: `uv add --dev <package_name>`
-    *   To run build scripts: `uv run pack.bat` (essentially just runs the bat which calls `uv run pyinstaller`)
+    *   To build the Windows exe: `scripts/pack.bat` (runs `uv run python -m PyInstaller iFakeGPS.spec`).
     *   **WSL/Linux agent environment**: Do NOT use or modify the project-local `.venv`; it is reserved for the user's Windows environment. When running checks from WSL/Linux, point `uv` at an external virtualenv, for example:
         *   `UV_PROJECT_ENVIRONMENT=/tmp/ifakegps-check-venv uv run --no-sync python -m py_compile ...`
 
@@ -27,8 +27,10 @@ This project uses `uv` for dependency management and execution.
         *   `src/ui`: User Interface (`iFakeGPSApp` in `app.py`).
         *   `src/utils`: Utilities (`logger`, helper functions).
     *   `src/main.py`: The production entry point (handles multiprocessing, args).
-    *   `run.py`: The developer entry point (runs from source).
-    *   `pack.bat`: Build script (updated for new structure and `winsdk`).
+    *   `scripts/run.py`: The developer entry point (runs from source).
+    *   `scripts/run.bat`: Self-elevating launcher for running from source as admin.
+    *   `scripts/pack.bat`: Local build script — builds from `iFakeGPS.spec`.
+    *   `scripts/extract_release_notes.py`: Used by CI to slice the matching `CHANGELOG.md` section.
 
 4.  **New Features & Optimizations**:
     *   **Geolocation**: Uses **Windows Geolocation API (`winsdk`)** for high-precision location detection. Fallbacks to hardcoded default (Taipei).
@@ -42,10 +44,11 @@ This project uses `uv` for dependency management and execution.
     *   Keep user-facing instructions simple.
 
 5.  **Tunneld & Packaging Knowledge (Crucial)**:
-    *   **Tunneld Components**: `tunneld` internally uses `fastapi`, `uvicorn`, `starlette`, `python-multipart`. These are "hidden imports" for PyInstaller and MUST be explicitly collected (`--hidden-import` and `--collect-all`).
-    *   **Metadata**: `tunneld` checks versions of `readchar`, `inquirer3`, and `pymobiledevice3` using `importlib.metadata`. PyInstaller strips this by default. You MUST use `--copy-metadata` for these packages.
-    *   **Drivers (DLLs)**: `pytun_pmd3` (used by `tunneld` for VPN creation) relies on `wintun.dll`. You MUST use `--collect-all pytun_pmd3` to bundle this DLL.
-    *   **Icon**: The app icon is generated via `process_icon.py` (center cropped square) to `app.ico`. `pack.bat` includes it with `--icon` and `--add-data`.
+    *   **Single source of truth**: `iFakeGPS.spec` is the ONLY build config. Both `scripts/pack.bat` and the GitHub Actions release workflow run `PyInstaller iFakeGPS.spec --clean`. Do NOT add build flags to `pack.bat`; edit the spec instead.
+    *   **Tunneld Components**: `tunneld` internally uses `fastapi`, `uvicorn`, `starlette`, `python-multipart`. These are "hidden imports" for PyInstaller and MUST be explicitly collected (`hiddenimports` + `collect_all` in the spec).
+    *   **Metadata**: `tunneld` checks versions of `readchar`, `inquirer3`, and `pymobiledevice3` using `importlib.metadata`. PyInstaller strips this by default. You MUST `copy_metadata` these packages in the spec.
+    *   **Drivers (DLLs)**: `pytun_pmd3` (used by `tunneld` for VPN creation) relies on `wintun.dll`. You MUST `collect_all('pytun_pmd3')` to bundle this DLL.
+    *   **Icon**: `app.ico` is referenced by the spec via `icon=['app.ico']` and bundled via `datas`.
 
 6.  **Developer Mode Logic**:
     *   The app now includes native Developer Mode management via `DeviceManager` class.
@@ -67,6 +70,7 @@ This project uses `uv` for dependency management and execution.
     *   Tag mapping rule:
         *   Use `X.Y.Z` tags only (for example `1.4.0`), not `vX.Y.Z`.
         *   Tag must match changelog section `[X.Y.Z]` exactly.
-    *   CI behavior:
-        *   Release workflow parses `CHANGELOG.md` and publishes the matched section as the GitHub Release body.
-        *   If no matching section exists, release job must fail.
+    *   CI behavior (`.github/workflows/release.yml`):
+        *   **Does NOT run on ordinary pushes** — Windows runners are billed. Only two things trigger it:
+            *   Pushing a version tag (`X.Y.Z`) → builds the exe and publishes a GitHub Release, using the matched `CHANGELOG.md` section as the body (the extract step fails the job if no matching section exists).
+            *   Clicking **Run workflow** (manual `workflow_dispatch`) → a **dev build**: builds the exe and uploads it as a workflow artifact (`iFakeGPS-dev-<sha>`, 14-day retention). No Release is created.

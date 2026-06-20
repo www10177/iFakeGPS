@@ -1,12 +1,16 @@
 name: Build and Release
 
+# Triggers (intentionally NOT on every push — Windows runners are billed):
+#   * push of a version tag (e.g. 1.6.3)  -> build + publish a GitHub Release
+#   * manual "Run workflow" button        -> dev build, exe uploaded as an artifact only
 on:
   push:
     tags:
       - '*.*.*'
+  workflow_dispatch:
 
 jobs:
-  build-and-release:
+  build:
     name: Build Windows EXE
     runs-on: windows-latest
     permissions:
@@ -28,12 +32,23 @@ jobs:
       - name: Build with PyInstaller
         run: uv run python -m PyInstaller iFakeGPS.spec --clean
 
+      # --- Manual dev build: artifact only, no public release ---
+      - name: Upload Dev Build Artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: iFakeGPS-dev-${{ github.sha }}
+          path: dist/iFakeGPS.exe
+          retention-days: 14
+
+      # --- Tag push: publish a GitHub Release from the matching CHANGELOG section ---
       - name: Extract Release Notes from CHANGELOG
-        run: uv run python extract_release_notes.py "${{ github.ref_name }}"
+        if: startsWith(github.ref, 'refs/tags/')
+        run: uv run python scripts/extract_release_notes.py "${{ github.ref_name }}"
 
       - name: Publish Release
-        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/iFakeGPS.exe
           body_path: release_notes.md

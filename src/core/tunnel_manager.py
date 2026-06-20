@@ -1,3 +1,5 @@
+import atexit
+import os
 import subprocess
 import sys
 import threading
@@ -7,6 +9,11 @@ from typing import Optional
 import requests
 
 from src.utils.logger import logger
+
+# Port the tunneld HTTP API listens on. Used both to detect a running instance
+# and to hunt down orphaned tunneld processes that still hold the port (and,
+# in the frozen exe, a lock on iFakeGPS.exe itself).
+TUNNELD_PORT = 49151
 
 
 class TunneldManager:
@@ -22,6 +29,7 @@ class TunneldManager:
         self._stderr_thread: Optional[threading.Thread] = None
         self.on_device_detected: Optional[callable] = None
         self.on_status_change: Optional[callable] = None
+        self._atexit_registered = False
 
     @staticmethod
     def is_admin() -> bool:
@@ -42,7 +50,7 @@ class TunneldManager:
         """Check if tunneld is already running by trying to connect to its API."""
         try:
             # The tunneld API uses / (root) endpoint, not /list-tunnels
-            response = requests.get("http://127.0.0.1:49151/", timeout=1)
+            response = requests.get(f"http://127.0.0.1:{TUNNELD_PORT}/", timeout=1)
             return response.status_code == 200
         except Exception:
             return False
@@ -89,7 +97,15 @@ class TunneldManager:
                 )
 
             self.running = True
-            logger.info("Started tunneld service")
+            logger.info("Started tunneld service (pid=%s)", getattr(self.process, "pid", None))
+
+            # Safety net: make sure the subprocess tree is torn down even if the
+            # app crashes or exits without calling _on_close. Otherwise the frozen
+            # tunneld child (which IS iFakeGPS.exe) keeps the exe locked and blocks
+            # the user from overwriting it to update (forcing a reboot).
+            if not self._atexit_registered:
+                atexit.register(self.stop)
+                self._atexit_registered = True
 
             # Start output monitoring thread
             self._output_thread = threading.Thread(
@@ -154,19 +170,87 @@ class TunneldManager:
             logger.warning(f"tunneld stderr monitor error: {e}")
 
     def stop(self):
-        """Stop the tunneld service."""
+        """Stop the tunneld service and any process it leaked.
+
+        IMPORTANT: a plain ``process.terminate()`` only kills the direct child and
+        leaves tunneld's own grandchildren running. In the frozen exe those linger
+        as iFakeGPS.exe copies that keep the executable locked, so updating requires
+        a reboot. We therefore kill the whole process tree, and additionally sweep
+        any orphaned tunneld still bound to the API port (covers the case where a
+        previous session left one behind and we only "adopted" it with no handle).
+        """
         if self.process:
+            pid = self.process.pid
             try:
-                self.process.terminate()
-                self.process.wait(timeout=5)
-            except Exception:
-                try:
-                    self.process.kill()
-                except Exception:
-                    pass
+                self._kill_process_tree(pid)
+            except Exception as e:
+                logger.warning("Failed to kill tunneld tree (pid=%s): %s", pid, e)
             self.process = None
+
+        # Sweep up any tunneld still holding the port (orphan / adopted instance).
+        try:
+            self._kill_port_owners(TUNNELD_PORT)
+        except Exception as e:
+            logger.warning("Failed to sweep tunneld on port %s: %s", TUNNELD_PORT, e)
+
         self.running = False
         logger.info("Stopped tunneld service")
+
+    @staticmethod
+    def _run_quiet(cmd: list) -> subprocess.CompletedProcess:
+        """Run a short helper command without flashing a console window."""
+        kwargs = {"capture_output": True, "text": True, "timeout": 10}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        return subprocess.run(cmd, **kwargs)
+
+    def _kill_process_tree(self, pid: int) -> None:
+        """Kill a process and all of its descendants."""
+        if sys.platform == "win32":
+            # /T kills the whole tree, /F forces it.
+            self._run_quiet(["taskkill", "/F", "/T", "/PID", str(pid)])
+            return
+
+        # POSIX: try to kill the process group, fall back to the single pid.
+        try:
+            os.killpg(os.getpgid(pid), 9)
+        except Exception:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+
+    def _kill_port_owners(self, port: int) -> None:
+        """Find and kill (tree) any process listening on ``port``.
+
+        Only used on Windows, where the frozen tunneld locks iFakeGPS.exe. On other
+        platforms a leaked tunneld does not block updates, so this is a no-op.
+        """
+        if sys.platform != "win32":
+            return
+
+        result = self._run_quiet(["netstat", "-ano", "-p", "TCP"])
+        if not result or not result.stdout:
+            return
+
+        needle = f":{port}"
+        pids = set()
+        for line in result.stdout.splitlines():
+            if needle not in line or "LISTENING" not in line.upper():
+                continue
+            parts = line.split()
+            if not parts:
+                continue
+            pid_str = parts[-1]
+            if pid_str.isdigit() and pid_str != "0":
+                pids.add(int(pid_str))
+
+        for pid in pids:
+            logger.info("Killing orphaned tunneld holding port %s (pid=%s)", port, pid)
+            try:
+                self._kill_process_tree(pid)
+            except Exception as e:
+                logger.warning("Failed to kill orphaned tunneld pid=%s: %s", pid, e)
 
     def restart(self) -> bool:
         """Restart the tunneld service."""

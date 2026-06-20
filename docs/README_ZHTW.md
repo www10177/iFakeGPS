@@ -113,20 +113,19 @@ cd ifakegps
 # 使用 uv（建議）
 uv sync
 
-# 或使用 pip
+# 或使用 pip（依 pyproject.toml 安裝相依套件）
 python -m venv .venv
 .venv\Scripts\activate  # Windows
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### 從原始碼執行
 
 ```bash
-# 使用 uv
-uv run python ifakegps.py
+# 使用 uv（建議）
+uv run python scripts/run.py
 
-# 或直接執行（iOS 17+ 需要管理員權限）
-python ifakegps.py
+# 或雙擊 scripts/run.bat —— 會自動要求管理員權限（iOS 17+ 需要）
 ```
 
 ### 手動通道設定（進階）
@@ -153,8 +152,8 @@ pymobiledevice3 mounter auto-mount
 ### 建置 Windows 執行檔
 
 ```bash
-# 使用批次檔 (自動使用 uv)
-pack.bat
+# 從 iFakeGPS.spec 建置（與 CI 共用的單一設定來源）
+scripts/pack.bat
 ```
 
 輸出：`dist/iFakeGPS.exe`（自動要求管理員權限）
