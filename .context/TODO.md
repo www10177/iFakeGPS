@@ -27,8 +27,19 @@
 - [x] 一般 push 不觸發任何建置（省 Windows runner 費用）
 - [x] YAML 格式驗證通過
 
-## 5. 收尾
-- [ ] 一次性 commit（等使用者確認）
+## 5. 應用程式內自動更新（新功能）✅
+- [x] `src/core/updater.py`：下載新 exe（驗證 PE/大小）+ 隔代換檔 batch（殺殘留 → 覆蓋 → 重啟 → 自刪）
+- [x] `update_checker.py`：解析 release 的 `.exe` asset（url + size）
+- [x] `app.py`：偵測 frozen 時改為一鍵下載（進度視窗）→ 套用；非 frozen 退回開瀏覽器
+- [x] i18n（en/zh）新增更新流程字串
+- [x] 單元測試 tests/test_updater.py（asset 解析、下載驗證、batch 模板）— 12 測試全過、ruff 通過
+- [x] 修掉 except-as-e 在 lambda 延後執行的真 bug
+- [x] AGENTS.md 文件化、CHANGELOG 1.7.0、pyproject 版本 → 1.7.0
+- [ ] **待實機驗證**：frozen exe 實際跑一次自動更新（下載→換檔→重啟）
+
+## 6. 收尾
+- [ ] commit
+- [ ] （使用者自行）tag `1.7.0` 推上去 → CI 自動發布
 
 ## 備註 / 後續可考慮（非本次範圍）
 - `src/ui/app.py:106-107`：location_storage 與 route_storage 都指向同一個 `routes.db`，可日後釐清。

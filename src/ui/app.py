@@ -9,7 +9,7 @@ from typing import Optional
 
 import customtkinter as ctk
 
-from src.core import update_checker
+from src.core import update_checker, updater
 from src.core.device_manager import DeviceManager
 from src.core.location_storage import LocationStorage, SavedLocationInfo
 from src.core.models import DeviceInfo, RoutePoint
@@ -2745,6 +2745,8 @@ class iFakeGPSApp(ctk.CTk):
                     latest_version=latest.version,
                     release_url=latest.html_url,
                     changelog=changelog,
+                    asset_url=latest.asset_url,
+                    asset_size=latest.asset_size,
                 ),
             )
 
@@ -2756,21 +2758,102 @@ class iFakeGPSApp(ctk.CTk):
         latest_version: str,
         release_url: str,
         changelog: str,
+        asset_url: Optional[str] = None,
+        asset_size: int = 0,
     ):
-        """Show update prompt with latest changelog and release link."""
+        """Prompt the user. On the frozen exe with a downloadable asset, offer a
+        one-click in-app update; otherwise fall back to opening the release page."""
+        changelog_text = changelog or t("dialog_update_changelog_empty")
+
+        if updater.is_supported() and asset_url:
+            message = t(
+                "dialog_update_available_msg_auto",
+                current=current_version,
+                latest=latest_version,
+                changelog=changelog_text,
+            )
+            if messagebox.askyesno(t("dialog_update_available_title"), message):
+                self._start_auto_update(asset_url, asset_size, release_url)
+            return
+
+        # Fallback: just open the release page for a manual download.
         message = t(
             "dialog_update_available_msg",
             current=current_version,
             latest=latest_version,
             url=release_url,
-            changelog=changelog or t("dialog_update_changelog_empty"),
+            changelog=changelog_text,
         )
-        should_open = messagebox.askyesno(
-            t("dialog_update_available_title"),
-            message,
-        )
-        if should_open:
+        if messagebox.askyesno(t("dialog_update_available_title"), message):
             webbrowser.open(release_url)
+
+    def _start_auto_update(self, asset_url: str, asset_size: int, release_url: str):
+        """Download the new exe with a progress dialog, then hand off to the
+        swap helper and close the app so it can replace the locked exe."""
+        win = ctk.CTkToplevel(self)
+        win.title(t("update_progress_title"))
+        win.geometry("440x150")
+        win.transient(self)
+        win.grab_set()
+        # Block the close button while the download is in progress.
+        win.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        label = ctk.CTkLabel(win, text=t("update_progress_downloading", pct=0))
+        label.pack(padx=20, pady=(28, 12))
+        bar = ctk.CTkProgressBar(win, width=380)
+        bar.set(0)
+        bar.pack(padx=20, pady=4)
+
+        def on_progress(written: int, total: int):
+            pct = int(written * 100 / total) if total else 0
+            self.after(0, lambda: self._update_progress_ui(bar, label, pct))
+
+        def worker():
+            try:
+                path = updater.download_update(
+                    asset_url, expected_size=asset_size, progress_cb=on_progress
+                )
+            except Exception as e:
+                logger.error("Auto-update download failed: %s", e, exc_info=True)
+                # bind err by value: the except-scoped `e` is cleared after the block
+                self.after(0, lambda err=e: self._auto_update_failed(win, err, release_url))
+                return
+            self.after(0, lambda: self._auto_update_ready(win, label, path, release_url))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _update_progress_ui(self, bar, label, pct: int):
+        try:
+            bar.set(max(0.0, min(1.0, pct / 100)))
+            label.configure(text=t("update_progress_downloading", pct=pct))
+        except Exception:
+            pass
+
+    def _auto_update_failed(self, win, error, release_url: str):
+        try:
+            win.destroy()
+        except Exception:
+            pass
+        if messagebox.askyesno(
+            t("update_failed_title"), t("update_failed_msg", error=error)
+        ):
+            webbrowser.open(release_url)
+
+    def _auto_update_ready(self, win, label, new_exe_path: str, release_url: str):
+        try:
+            label.configure(text=t("update_progress_preparing"))
+            self.update_idletasks()
+        except Exception:
+            pass
+        try:
+            updater.apply_update_and_exit(new_exe_path)
+        except Exception as e:
+            logger.error("Failed to launch update helper: %s", e, exc_info=True)
+            self._auto_update_failed(win, e, release_url)
+            return
+        # Close cleanly so tunneld/device handles are released and the helper can
+        # overwrite the now-unlocked exe, then relaunch.
+        self._on_close()
 
     def _on_search_result(self, lat: float, lon: float, display_name: str):
         """Handle search result on main thread."""

@@ -264,6 +264,22 @@ _STRINGS["en"] = {
         "{url}\n\n"
         "Open the release page now?"
     ),
+    "dialog_update_available_msg_auto": (
+        "A new version is available.\n\n"
+        "Current: {current}\n"
+        "Latest: {latest}\n\n"
+        "Latest changelog:\n"
+        "{changelog}\n\n"
+        "Download and install it now? The app will restart automatically."
+    ),
+    "update_progress_title": "Updating",
+    "update_progress_downloading": "Downloading new version... {pct}%",
+    "update_progress_preparing": "Download complete. Restarting to apply...",
+    "update_failed_title": "Update Failed",
+    "update_failed_msg": (
+        "Could not download the update:\n{error}\n\n"
+        "Open the release page to download it manually?"
+    ),
     "dialog_enable_dev_title": "Enable Developer Mode",
     "dialog_enable_dev_msg": (
         "This command will trigger 'Enable Developer Mode' on the connected device.\n\n"
@@ -554,6 +570,22 @@ _STRINGS["zh_TW"] = {
         "下載網址：\n"
         "{url}\n\n"
         "是否現在開啟下載頁面？"
+    ),
+    "dialog_update_available_msg_auto": (
+        "偵測到新版本。\n\n"
+        "目前版本：{current}\n"
+        "最新版本：{latest}\n\n"
+        "最新版本更新內容：\n"
+        "{changelog}\n\n"
+        "是否現在下載並安裝？完成後將自動重新啟動。"
+    ),
+    "update_progress_title": "更新中",
+    "update_progress_downloading": "正在下載新版本... {pct}%",
+    "update_progress_preparing": "下載完成，正在重新啟動以套用更新...",
+    "update_failed_title": "更新失敗",
+    "update_failed_msg": (
+        "無法下載更新：\n{error}\n\n"
+        "是否開啟下載頁面手動下載？"
     ),
     "dialog_enable_dev_title": "啟用開發者模式",
     "dialog_enable_dev_msg": (

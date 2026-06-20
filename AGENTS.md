@@ -58,7 +58,14 @@ This project uses `uv` for dependency management and execution.
         2.  Triggers `AmfiService.enable_developer_mode` - sends the command to the phone.
         3.  Shows a localized guide UI to the user.
 
-7.  **Release & Changelog Rules (CI Parsed)**:
+7.  **In-App Auto-Update (Windows exe only)**:
+    *   Logic split: `src/core/update_checker.py` checks the latest GitHub release and exposes the `.exe` asset URL; `src/core/updater.py` performs the download + swap; `iFakeGPSApp._start_auto_update` (in `app.py`) drives the progress UI.
+    *   **Why a helper is needed**: a running .exe is locked by Windows (and the frozen tunneld child locks it too), so it cannot overwrite itself. `updater.apply_update_and_exit()` downloads the new exe to a temp folder, writes `apply_update.bat`, launches it **detached**, and the app exits. The batch waits for the app's PID to die, `taskkill`s any lingering `iFakeGPS.exe` (tunneld) to release the lock, overwrites the exe, relaunches it, and deletes the temp folder.
+    *   The batch uses `ping` (not `timeout`) to sleep, because a `DETACHED_PROCESS` batch has no console and `timeout` would fail.
+    *   Auto-update only runs when frozen (`updater.is_supported()`); from source it falls back to opening the release page.
+    *   The release asset MUST be named `iFakeGPS.exe` (it is — see `release.yml`), or `update_checker` won't find an asset and the app falls back to the manual page.
+
+8.  **Release & Changelog Rules (CI Parsed)**:
     *   Keep release-format instructions in this `AGENTS.md` (not in `CHANGELOG.md`).
     *   `CHANGELOG.md` 內容一律使用繁體中文撰寫。
     *   For each release, add a section in `CHANGELOG.md` using this exact header style:

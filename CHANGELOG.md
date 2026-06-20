@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-20
+
+### Added
+- **應用程式內自動更新**：偵測到新版時可直接在程式內一鍵下載並安裝，下載過程顯示進度，完成後自動重新啟動，不再需要手動到下載頁覆蓋檔案。非打包執行（從原始碼執行）時仍維持開啟下載頁的行為。
+
+### Fixed
+- **更新時的檔案鎖死問題**：修正關閉程式後 tunneld 背景子行程殘留、鎖住 `iFakeGPS.exe` 導致無法覆蓋更新（過去需重開機）的問題。關閉時改為終結整棵 tunneld 行程樹，並清除佔用 tunneld 連接埠的殘留行程。
+
 ## [1.6.3] - 2026-06-19
 
 ### Added

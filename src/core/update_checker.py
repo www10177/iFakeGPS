@@ -18,6 +18,8 @@ class ReleaseInfo:
     tag_name: str
     html_url: str
     body: str
+    asset_url: Optional[str] = None
+    asset_size: int = 0
 
     @property
     def version(self) -> str:
@@ -94,7 +96,24 @@ def fetch_latest_release(timeout_sec: int = 6) -> Optional[ReleaseInfo]:
         body = str(data.get("body", "") or "").strip()
         if not tag_name or not html_url:
             return None
-        return ReleaseInfo(tag_name=tag_name, html_url=html_url, body=body)
+
+        # Find the downloadable Windows exe asset (for in-app auto-update).
+        asset_url: Optional[str] = None
+        asset_size = 0
+        for asset in data.get("assets", []) or []:
+            name = str(asset.get("name", "")).lower()
+            if name.endswith(".exe"):
+                asset_url = str(asset.get("browser_download_url", "")).strip() or None
+                asset_size = int(asset.get("size", 0) or 0)
+                break
+
+        return ReleaseInfo(
+            tag_name=tag_name,
+            html_url=html_url,
+            body=body,
+            asset_url=asset_url,
+            asset_size=asset_size,
+        )
     except Exception as e:
         logger.info("Update check failed: %s", e)
         return None
