@@ -280,10 +280,10 @@ _STRINGS["en"] = {
         "Could not download the update:\n{error}\n\n"
         "Open the release page to download it manually?"
     ),
-    # --- Device screen preview (burst capture) ---
-    "btn_device_preview": "Device Preview",
-    "tip_device_preview": "Show device screen preview",
-    "preview_window_title": "Device Screen Preview",
+    # --- Device screen mirror (burst capture) ---
+    "btn_device_preview": "Device Screen",
+    "tip_device_preview": "Mirror the device screen to the PC",
+    "preview_window_title": "Device Screen",
     "preview_not_connected": "Connect to a device first.",
     "preview_status_waiting": "Capturing device screen...",
     "preview_status_error": "Cannot capture screen: {error}",
@@ -598,10 +598,10 @@ _STRINGS["zh_TW"] = {
         "無法下載更新：\n{error}\n\n"
         "是否開啟下載頁面手動下載？"
     ),
-    # --- 裝置畫面預覽（連拍）---
-    "btn_device_preview": "裝置畫面預覽",
-    "tip_device_preview": "顯示裝置畫面預覽",
-    "preview_window_title": "裝置畫面預覽",
+    # --- 裝置畫面投影（連拍）---
+    "btn_device_preview": "裝置畫面投影",
+    "tip_device_preview": "將裝置畫面投影到電腦",
+    "preview_window_title": "裝置畫面投影",
     "preview_not_connected": "請先連接裝置。",
     "preview_status_waiting": "正在擷取裝置畫面...",
     "preview_status_error": "無法擷取畫面：{error}",
