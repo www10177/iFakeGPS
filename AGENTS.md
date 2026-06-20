@@ -65,7 +65,12 @@ This project uses `uv` for dependency management and execution.
     *   Auto-update only runs when frozen (`updater.is_supported()`); from source it falls back to opening the release page.
     *   The release asset MUST be named `iFakeGPS.exe` (it is — see `release.yml`), or `update_checker` won't find an asset and the app falls back to the manual page.
 
-8.  **Release & Changelog Rules (CI Parsed)**:
+8.  **Device Screen Preview (burst capture)**:
+    *   `src/core/screenshot_service.py` (`ScreenshotService`) grabs device screenshots via the DVT `Screenshot` instrument. It opens its OWN `DvtSecureSocketProxyService` (separate from the one `DeviceManager` keeps for location simulation) so frame grabs never race with location updates on the same socket; the channel is reused across frames and reset on error.
+    *   UI: a floating `CTkToplevel` (not embedded in the main 3-pane layout) driven by a daemon worker thread that captures → PIL-decodes → posts a `CTkImage` back via `self.after`. Throttled to ~1–2 fps (user-selectable). Opened from the 📱 button in the map toolbar; closed via `_close_device_preview`, which `_on_close` also calls to release the DVT channel on exit.
+    *   This is pseudo-realtime (burst), not smooth video — pymobiledevice3 has no live H.264 screen stream.
+
+9.  **Release & Changelog Rules (CI Parsed)**:
     *   Keep release-format instructions in this `AGENTS.md` (not in `CHANGELOG.md`).
     *   `CHANGELOG.md` 內容一律使用繁體中文撰寫。
     *   For each release, add a section in `CHANGELOG.md` using this exact header style:

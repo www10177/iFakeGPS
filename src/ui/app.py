@@ -1,3 +1,4 @@
+import io
 import os
 import sys
 import threading
@@ -21,6 +22,7 @@ from src.core.models import DeviceInfo, RoutePoint
 from src.core.route_storage import RouteStorage, SavedRouteInfo
 from src.core.route_walker import RouteWalker
 from src.core.routing import RoutingError, RoutingService
+from src.core.screenshot_service import ScreenshotService
 from src.core.tunnel_manager import TunneldManager
 from src.ui.caching_map_view import CachingTileMapView
 from src.ui.coordinate_inputs import (
@@ -46,6 +48,7 @@ ICON_UNLOCK = "\uE785"
 ICON_AIRPLANE = "\uE709"
 ICON_DELETE = "\uE74D"
 ICON_NAVIGATE = "\uE8B8"
+ICON_PHONE = "\uE8EA"
 
 
 class iFakeGPSApp(ctk.CTk):
@@ -114,6 +117,15 @@ class iFakeGPSApp(ctk.CTk):
         self.follow_current_position = True
         self.discovered_devices: list[DeviceInfo] = []
         self.right_panel_visible = True
+
+        # Device-screen preview (burst capture) state
+        self._screenshot_service = ScreenshotService(self.device_manager)
+        self._preview_window: Optional[ctk.CTkToplevel] = None
+        self._preview_stop_event: Optional[threading.Event] = None
+        self._preview_image_label = None
+        self._preview_status_label = None
+        self._preview_ctk_image = None  # keep a ref so Tk doesn't GC the frame
+        self._preview_interval = 0.7  # seconds between frames (~1.5 fps)
 
         # Build UI
         self._create_ui()
@@ -990,6 +1002,19 @@ class iFakeGPSApp(ctk.CTk):
         self.btn_follow_current_position.grid(row=0, column=1, padx=(3, 6), pady=6)
         ToolTip(self.btn_follow_current_position, text=t("tip_follow_current_position"))
         self._update_follow_button_state()
+
+        self.btn_device_preview = ctk.CTkButton(
+            map_toolbar,
+            text=ICON_PHONE,
+            font=ctk.CTkFont(family=ICON_FONT_FAMILY, size=16),
+            width=34,
+            height=30,
+            command=self._open_device_preview,
+            fg_color="#374151",
+            hover_color="#4b5563",
+        )
+        self.btn_device_preview.grid(row=0, column=2, padx=(3, 6), pady=6)
+        ToolTip(self.btn_device_preview, text=t("tip_device_preview"))
 
     def _set_default_location(self):
         """Try to set map position based on Windows Location API, with IP fallback."""
@@ -2650,8 +2675,151 @@ class iFakeGPSApp(ctk.CTk):
         # overwrite the now-unlocked exe, then relaunch.
         self._on_close()
 
+    # -------------------------------------------------------------
+    # Device screen preview (pseudo-realtime burst capture)
+    # -------------------------------------------------------------
+
+    @staticmethod
+    def _fit_size(img_w: int, img_h: int, box_w: int, box_h: int) -> tuple[int, int]:
+        """Scale (img_w, img_h) to fit within (box_w, box_h), preserving aspect."""
+        if img_w <= 0 or img_h <= 0:
+            return (box_w, box_h)
+        scale = min(box_w / img_w, box_h / img_h)
+        return (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
+
+    def _open_device_preview(self):
+        """Open (or focus) the floating device-screen preview window."""
+        if not self.device_manager.connected:
+            messagebox.showinfo(t("preview_window_title"), t("preview_not_connected"))
+            return
+
+        # Already open → just bring it forward.
+        if self._preview_window is not None and self._preview_window.winfo_exists():
+            self._preview_window.lift()
+            self._preview_window.focus_force()
+            return
+
+        win = ctk.CTkToplevel(self)
+        win.title(t("preview_window_title"))
+        win.geometry("380x760")
+        win.minsize(240, 360)
+        win.configure(fg_color="#0f172a")
+        win.grid_columnconfigure(0, weight=1)
+        win.grid_rowconfigure(0, weight=1)
+
+        self._preview_image_label = ctk.CTkLabel(win, text="", fg_color="#020617")
+        self._preview_image_label.grid(
+            row=0, column=0, sticky="nsew", padx=8, pady=(8, 4)
+        )
+
+        controls = ctk.CTkFrame(win, fg_color="transparent")
+        controls.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 4))
+        controls.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(controls, text=t("preview_rate_label")).grid(
+            row=0, column=0, padx=(0, 6)
+        )
+        rate = ctk.CTkSegmentedButton(
+            controls,
+            values=[
+                t("preview_rate_slow"),
+                t("preview_rate_mid"),
+                t("preview_rate_fast"),
+            ],
+            command=self._on_preview_rate_change,
+        )
+        rate.set(t("preview_rate_mid"))
+        rate.grid(row=0, column=1, sticky="ew")
+
+        self._preview_status_label = ctk.CTkLabel(
+            win, text=t("preview_status_waiting"), text_color="#94a3b8"
+        )
+        self._preview_status_label.grid(
+            row=2, column=0, sticky="ew", padx=8, pady=(0, 8)
+        )
+
+        self._preview_window = win
+        self._preview_stop_event = threading.Event()
+        win.protocol("WM_DELETE_WINDOW", self._close_device_preview)
+
+        threading.Thread(
+            target=self._preview_loop, args=(self._preview_stop_event,), daemon=True
+        ).start()
+
+    def _on_preview_rate_change(self, value: str):
+        mapping = {
+            t("preview_rate_slow"): 1.5,
+            t("preview_rate_mid"): 0.7,
+            t("preview_rate_fast"): 0.3,
+        }
+        self._preview_interval = mapping.get(value, 0.7)
+
+    def _preview_loop(self, stop_event: threading.Event):
+        """Background worker: grab → decode → post to UI, until stopped."""
+        errors = 0
+        while not stop_event.is_set():
+            try:
+                png = self._screenshot_service.capture_png()
+                errors = 0
+                from PIL import Image
+
+                img = Image.open(io.BytesIO(png))
+                img.load()
+                self.after(0, lambda im=img: self._update_preview_image(im))
+            except Exception as e:
+                errors += 1
+                msg = str(e)
+                self.after(0, lambda m=msg: self._set_preview_status(m))
+                # Back off on repeated failures (device locked / disconnected).
+                stop_event.wait(min(3.0, 0.5 * errors))
+            stop_event.wait(self._preview_interval)
+
+    def _update_preview_image(self, pil_image):
+        if self._preview_window is None or not self._preview_window.winfo_exists():
+            return
+        label = self._preview_image_label
+        box_w = max(label.winfo_width() - 4, 100)
+        box_h = max(label.winfo_height() - 4, 100)
+        w, h = self._fit_size(pil_image.width, pil_image.height, box_w, box_h)
+        self._preview_ctk_image = ctk.CTkImage(
+            light_image=pil_image, dark_image=pil_image, size=(w, h)
+        )
+        label.configure(image=self._preview_ctk_image, text="")
+        if self._preview_status_label is not None:
+            self._preview_status_label.configure(text="")
+
+    def _set_preview_status(self, error: str):
+        if (
+            self._preview_status_label is not None
+            and self._preview_status_label.winfo_exists()
+        ):
+            self._preview_status_label.configure(
+                text=t("preview_status_error", error=error)
+            )
+
+    def _close_device_preview(self):
+        """Stop the capture loop and release the preview window/connection."""
+        if self._preview_stop_event is not None:
+            self._preview_stop_event.set()
+        self._preview_stop_event = None
+        try:
+            self._screenshot_service.close()
+        except Exception as e:
+            logger.debug("Error closing screenshot service: %s", e)
+        if self._preview_window is not None:
+            try:
+                self._preview_window.destroy()
+            except Exception:
+                pass
+        self._preview_window = None
+        self._preview_image_label = None
+        self._preview_status_label = None
+        self._preview_ctk_image = None
+
     def _on_close(self):
         """Handle window close."""
+        # Stop the device preview first so its DVT channel is released.
+        self._close_device_preview()
+
         # Try to clear simulated location before disconnect/exit.
         # Keep this quiet to avoid interrupting shutdown with dialogs.
         if self.device_manager and self.device_manager.connected:

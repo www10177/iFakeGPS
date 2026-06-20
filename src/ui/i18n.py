@@ -280,6 +280,16 @@ _STRINGS["en"] = {
         "Could not download the update:\n{error}\n\n"
         "Open the release page to download it manually?"
     ),
+    # --- Device screen preview (burst capture) ---
+    "tip_device_preview": "Show device screen preview",
+    "preview_window_title": "Device Screen Preview",
+    "preview_not_connected": "Connect to a device first.",
+    "preview_status_waiting": "Capturing device screen...",
+    "preview_status_error": "Cannot capture screen: {error}",
+    "preview_rate_label": "Refresh:",
+    "preview_rate_slow": "Slow",
+    "preview_rate_mid": "Medium",
+    "preview_rate_fast": "Fast",
     "dialog_enable_dev_title": "Enable Developer Mode",
     "dialog_enable_dev_msg": (
         "This command will trigger 'Enable Developer Mode' on the connected device.\n\n"
@@ -587,6 +597,16 @@ _STRINGS["zh_TW"] = {
         "無法下載更新：\n{error}\n\n"
         "是否開啟下載頁面手動下載？"
     ),
+    # --- 裝置畫面預覽（連拍）---
+    "tip_device_preview": "顯示裝置畫面預覽",
+    "preview_window_title": "裝置畫面預覽",
+    "preview_not_connected": "請先連接裝置。",
+    "preview_status_waiting": "正在擷取裝置畫面...",
+    "preview_status_error": "無法擷取畫面：{error}",
+    "preview_rate_label": "更新頻率：",
+    "preview_rate_slow": "慢",
+    "preview_rate_mid": "中",
+    "preview_rate_fast": "快",
     "dialog_enable_dev_title": "啟用開發者模式",
     "dialog_enable_dev_msg": (
         "此操作將在已連接的裝置上觸發「啟用開發者模式」。\n\n"
