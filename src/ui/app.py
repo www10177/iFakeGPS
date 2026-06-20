@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 import time
+import tkinter as tk
 import webbrowser
 from enum import Enum
 from tkinter import messagebox
@@ -125,7 +126,6 @@ class iFakeGPSApp(ctk.CTk):
         self._preview_status_label = None
         self._preview_ctk_image = None  # keep a ref so Tk doesn't GC the frame
         self._preview_interval = 0.7  # seconds between frames (~1.5 fps)
-        self._preview_box = (340, 660)  # available (w, h) for the image, kept in sync
         self._preview_visible = True  # paused when the window is minimized
 
         # Build UI
@@ -2708,7 +2708,9 @@ class iFakeGPSApp(ctk.CTk):
         win.grid_columnconfigure(0, weight=1)
         win.grid_rowconfigure(0, weight=1)
 
-        self._preview_image_label = ctk.CTkLabel(win, text="", fg_color="#020617")
+        # Plain tk.Label + ImageTk shows the frame at exact pixel size — CTkImage
+        # would re-scale by the HiDPI factor and overflow/clip the window.
+        self._preview_image_label = tk.Label(win, bg="#020617", bd=0)
         self._preview_image_label.grid(
             row=0, column=0, sticky="nsew", padx=8, pady=(8, 4)
         )
@@ -2742,20 +2744,13 @@ class iFakeGPSApp(ctk.CTk):
         self._preview_stop_event = threading.Event()
         self._preview_visible = True
         win.protocol("WM_DELETE_WINDOW", self._close_device_preview)
-        # Track the window size (to fit the image) and minimized state (to pause).
-        win.bind("<Configure>", self._on_preview_configure)
+        # Pause capture while minimized (no point burning USB/CPU when hidden).
         win.bind("<Unmap>", lambda e: e.widget is win and setattr(self, "_preview_visible", False))
         win.bind("<Map>", lambda e: e.widget is win and setattr(self, "_preview_visible", True))
 
         threading.Thread(
             target=self._preview_loop, args=(self._preview_stop_event,), daemon=True
         ).start()
-
-    def _on_preview_configure(self, event):
-        # Only the toplevel's own resize matters; derive the image box from it,
-        # reserving space for the rate controls + status row below the image.
-        if self._preview_window is not None and event.widget is self._preview_window:
-            self._preview_box = (max(event.width - 24, 100), max(event.height - 96, 100))
 
     def _on_preview_rate_change(self, value: str):
         mapping = {
@@ -2766,10 +2761,11 @@ class iFakeGPSApp(ctk.CTk):
         self._preview_interval = mapping.get(value, 0.7)
 
     def _preview_loop(self, stop_event: threading.Event):
-        """Background worker: grab → decode → downscale → post to UI, until stopped.
+        """Background worker: grab → decode → post to UI, until stopped.
 
-        Decoding and resizing happen here (off the UI thread). Capture is skipped
-        while the window is minimized so it doesn't burn USB/CPU when not visible.
+        Decoding (the heavy part) happens here off the UI thread; the resize to
+        the live window size happens on the UI thread (it needs the real widget
+        pixels). Capture is skipped while the window is minimized.
         """
         from PIL import Image
 
@@ -2783,11 +2779,6 @@ class iFakeGPSApp(ctk.CTk):
                 errors = 0
                 img = Image.open(io.BytesIO(png))
                 img.load()
-                # Fit to the current window box here so the UI thread only swaps
-                # the already-sized frame (no resize work on the main loop).
-                box_w, box_h = self._preview_box
-                w, h = self._fit_size(img.width, img.height, box_w, box_h)
-                img = img.resize((w, h))
                 self.after(0, lambda im=img: self._update_preview_image(im))
             except Exception as e:
                 errors += 1
@@ -2798,15 +2789,23 @@ class iFakeGPSApp(ctk.CTk):
             stop_event.wait(self._preview_interval)
 
     def _update_preview_image(self, pil_image):
-        if self._preview_window is None or not self._preview_window.winfo_exists():
+        from PIL import ImageTk
+
+        win = self._preview_window
+        label = self._preview_image_label
+        if win is None or not win.winfo_exists() or label is None:
             return
-        # pil_image is already sized to fit by the worker; just wrap and show it.
-        self._preview_ctk_image = ctk.CTkImage(
-            light_image=pil_image,
-            dark_image=pil_image,
-            size=(pil_image.width, pil_image.height),
-        )
-        self._preview_image_label.configure(image=self._preview_ctk_image, text="")
+
+        # Fit to the label's REAL pixel size (ImageTk shows 1:1, no HiDPI scaling).
+        avail_w = label.winfo_width()
+        avail_h = label.winfo_height()
+        if avail_w < 50 or avail_h < 50:  # not realized yet → estimate from window
+            avail_w = max(win.winfo_width() - 24, 100)
+            avail_h = max(win.winfo_height() - 96, 100)
+        w, h = self._fit_size(pil_image.width, pil_image.height, avail_w, avail_h)
+
+        self._preview_ctk_image = ImageTk.PhotoImage(pil_image.resize((w, h)))
+        label.configure(image=self._preview_ctk_image)
         if self._preview_status_label is not None:
             self._preview_status_label.configure(text="")
 
