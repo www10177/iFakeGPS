@@ -34,12 +34,12 @@
 - [x] i18n（en/zh）新增更新流程字串
 - [x] 單元測試 tests/test_updater.py（asset 解析、下載驗證、batch 模板）— 12 測試全過、ruff 通過
 - [x] 修掉 except-as-e 在 lambda 延後執行的真 bug
-- [x] AGENTS.md 文件化、CHANGELOG 1.7.0、pyproject 版本 → 1.7.0
+- [x] AGENTS.md 文件化；變更暫放 CHANGELOG `[Unreleased]`，pyproject 版本維持 1.6.3（尚未發佈）
 - [ ] **待實機驗證**：frozen exe 實際跑一次自動更新（下載→換檔→重啟）
 
 ## 6. 收尾
-- [ ] commit
-- [ ] （使用者自行）tag `1.7.0` 推上去 → CI 自動發布
+- [x] commit
+- [ ] （發佈時，使用者自行）把 `[Unreleased]` 內容移到新版本區塊、bump pyproject、tag 推上去 → CI 自動發布
 
 ## 備註 / 後續可考慮（非本次範圍）
 - `src/ui/app.py:106-107`：location_storage 與 route_storage 都指向同一個 `routes.db`，可日後釐清。

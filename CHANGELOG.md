@@ -4,8 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [1.7.0] - 2026-06-20
-
 ### Added
 - **應用程式內自動更新**：偵測到新版時可直接在程式內一鍵下載並安裝，下載過程顯示進度，完成後自動重新啟動，不再需要手動到下載頁覆蓋檔案。非打包執行（從原始碼執行）時仍維持開啟下載頁的行為。
 
