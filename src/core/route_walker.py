@@ -50,10 +50,28 @@ class RouteWalker:
         self._pause_event.set()  # Not paused initially (set = "go ahead")
 
         # Resume state: track where we left off
+        self._dispatched_index: int = 0
         self._resume_segment_index: int = 0  # which segment to continue from
         self._resume_covered_dist: float = 0.0  # how far into that segment (km)
         self._last_batch_completed_index: int = -1
         self._disconnect_event_sent: bool = False
+
+        # Random temporary stop state
+        self.random_stop_enabled = False
+        self.random_stop_interval_m = 150.0
+        self.random_stop_min_s = 5.0
+        self.random_stop_max_s = 20.0
+        self._random_stop_active = False
+        self._random_stop_remaining_s = 0.0
+        self._distance_since_random_stop_km = 0.0
+        self._next_random_stop_distance_km = float("inf")
+        self.displacement_noise_enabled = False
+        self.displacement_radius_m = 3.0
+        self._displacement_offset_north_m = 0.0
+        self._displacement_offset_east_m = 0.0
+        self._displacement_target_north_m = 0.0
+        self._displacement_target_east_m = 0.0
+        self._distance_since_displacement_target_km = 0.0
 
     def set_route(self, points: list[RoutePoint]):
         """Set the route points to walk.
@@ -75,6 +93,33 @@ class RouteWalker:
     def set_loop(self, loop: bool):
         """Set whether to loop the route."""
         self.loop = loop
+
+    def set_random_stop_settings(
+        self,
+        enabled: bool,
+        interval_m: float,
+        duration_min_s: float,
+        duration_max_s: float,
+    ):
+        """Configure random temporary stop behavior for route walking."""
+        self.random_stop_enabled = bool(enabled)
+        self.random_stop_interval_m = max(1.0, float(interval_m))
+        self.random_stop_min_s = max(1.0, float(duration_min_s))
+        self.random_stop_max_s = max(self.random_stop_min_s, float(duration_max_s))
+        self._distance_since_random_stop_km = 0.0
+        self._random_stop_active = False
+        self._random_stop_remaining_s = 0.0
+        self._schedule_next_random_stop()
+
+    def set_displacement_noise_settings(self, enabled: bool, radius_m: float):
+        """Configure smooth in-circle displacement noise around route points."""
+        self.displacement_noise_enabled = bool(enabled)
+        self.displacement_radius_m = max(0.0, float(radius_m))
+        self._displacement_offset_north_m = 0.0
+        self._displacement_offset_east_m = 0.0
+        self._displacement_target_north_m = 0.0
+        self._displacement_target_east_m = 0.0
+        self._distance_since_displacement_target_km = 0.0
 
     def pause(self):
         """Pause walking at the current position. Resume with resume()."""
@@ -112,6 +157,15 @@ class RouteWalker:
         self._dispatched_index = 0  # next point index to start a segment FROM
         self._last_batch_completed_index = -1
         self._disconnect_event_sent = False
+        self._distance_since_random_stop_km = 0.0
+        self._random_stop_active = False
+        self._random_stop_remaining_s = 0.0
+        self._schedule_next_random_stop()
+        self._distance_since_displacement_target_km = 0.0
+        self._displacement_offset_north_m = 0.0
+        self._displacement_offset_east_m = 0.0
+        self._displacement_target_north_m = 0.0
+        self._displacement_target_east_m = 0.0
 
         self.is_walking = True
         self.thread = threading.Thread(
@@ -132,6 +186,15 @@ class RouteWalker:
         self._dispatched_index = 0
         self._last_batch_completed_index = -1
         self._disconnect_event_sent = False
+        self._distance_since_random_stop_km = 0.0
+        self._random_stop_active = False
+        self._random_stop_remaining_s = 0.0
+        self._next_random_stop_distance_km = float("inf")
+        self._distance_since_displacement_target_km = 0.0
+        self._displacement_offset_north_m = 0.0
+        self._displacement_offset_east_m = 0.0
+        self._displacement_target_north_m = 0.0
+        self._displacement_target_east_m = 0.0
         logger.info("RouteWalker stop signalled")
 
     def _walk_loop(self, my_gen: int):
@@ -262,6 +325,15 @@ class RouteWalker:
             if self.stop_requested:
                 return False
 
+            if self._random_stop_active:
+                fraction = covered_dist / total_dist
+                hold_lat = start.latitude + (end.latitude - start.latitude) * fraction
+                hold_lon = start.longitude + (end.longitude - start.longitude) * fraction
+                self.update_callback(hold_lat, hold_lon)
+                time.sleep(update_interval)
+                self._tick_random_stop(update_interval)
+                continue
+
             # 1. Determine speed for this step
             step_speed = self.speed_kmh
             if self.speed_noise_pct > 0:
@@ -285,6 +357,9 @@ class RouteWalker:
             fraction = covered_dist / total_dist
             new_lat = start.latitude + (end.latitude - start.latitude) * fraction
             new_lon = start.longitude + (end.longitude - start.longitude) * fraction
+            new_lat, new_lon = self._apply_displacement_noise(
+                new_lat, new_lon, step_dist
+            )
 
             # 6. Send location update
             if not self.device_manager.set_location(new_lat, new_lon):
@@ -300,6 +375,7 @@ class RouteWalker:
             # Any successful location update clears one-shot disconnect notification lock.
             self._disconnect_event_sent = False
             self.update_callback(new_lat, new_lon)
+            self._advance_random_stop_trigger(step_dist)
 
             time.sleep(update_interval)
 
@@ -316,3 +392,114 @@ class RouteWalker:
         ) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) * math.sin(dlon / 2)
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         return R * c
+
+    def _schedule_next_random_stop(self):
+        if not self.random_stop_enabled:
+            self._next_random_stop_distance_km = float("inf")
+            return
+
+        avg_interval_km = self.random_stop_interval_m / 1000.0
+        multiplier = random.uniform(0.7, 1.3)
+        self._next_random_stop_distance_km = avg_interval_km * multiplier
+
+    def _advance_random_stop_trigger(self, step_dist_km: float) -> bool:
+        if (
+            not self.random_stop_enabled
+            or self._random_stop_active
+            or self._next_random_stop_distance_km == float("inf")
+        ):
+            return False
+
+        self._distance_since_random_stop_km += step_dist_km
+        if self._distance_since_random_stop_km < self._next_random_stop_distance_km:
+            return False
+
+        self._distance_since_random_stop_km = 0.0
+        self._random_stop_active = True
+        self._random_stop_remaining_s = random.uniform(
+            self.random_stop_min_s, self.random_stop_max_s
+        )
+        self._schedule_next_random_stop()
+        return True
+
+    def _tick_random_stop(self, elapsed_s: float) -> bool:
+        if not self._random_stop_active:
+            return False
+
+        self._random_stop_remaining_s = max(
+            0.0, self._random_stop_remaining_s - elapsed_s
+        )
+        if self._random_stop_remaining_s == 0.0:
+            self._random_stop_active = False
+            return False
+        return True
+
+    def _apply_displacement_noise(
+        self, latitude: float, longitude: float, step_dist_km: float
+    ) -> tuple[float, float]:
+        if not self.displacement_noise_enabled or self.displacement_radius_m <= 0:
+            return latitude, longitude
+
+        self._distance_since_displacement_target_km += step_dist_km
+        refresh_distance_km = max(self.displacement_radius_m * 1.5, 1.0) / 1000.0
+        if (
+            self._distance_since_displacement_target_km >= refresh_distance_km
+            or (
+                self._displacement_target_north_m == 0.0
+                and self._displacement_target_east_m == 0.0
+                and self._displacement_offset_north_m == 0.0
+                and self._displacement_offset_east_m == 0.0
+            )
+        ):
+            self._distance_since_displacement_target_km = 0.0
+            self._sample_displacement_target()
+
+        step_dist_m = step_dist_km * 1000.0
+        alpha = min(0.35, max(0.08, step_dist_m / max(self.displacement_radius_m, 1.0)))
+        self._displacement_offset_north_m += (
+            self._displacement_target_north_m - self._displacement_offset_north_m
+        ) * alpha
+        self._displacement_offset_east_m += (
+            self._displacement_target_east_m - self._displacement_offset_east_m
+        ) * alpha
+
+        offset_norm = math.hypot(
+            self._displacement_offset_north_m, self._displacement_offset_east_m
+        )
+        if offset_norm > self.displacement_radius_m:
+            scale = self.displacement_radius_m / offset_norm
+            self._displacement_offset_north_m *= scale
+            self._displacement_offset_east_m *= scale
+
+        return self._offset_lat_lon(
+            latitude,
+            longitude,
+            self._displacement_offset_north_m,
+            self._displacement_offset_east_m,
+        )
+
+    def _sample_displacement_target(self):
+        radius = random.uniform(0.0, self.displacement_radius_m)
+        angle = random.uniform(0.0, math.tau)
+        self._displacement_target_north_m = math.cos(angle) * radius
+        self._displacement_target_east_m = math.sin(angle) * radius
+
+    def _offset_lat_lon(
+        self, latitude: float, longitude: float, north_m: float, east_m: float
+    ) -> tuple[float, float]:
+        lat_delta = north_m / 111320.0
+        lon_scale = max(0.000001, math.cos(math.radians(latitude)) * 111320.0)
+        lon_delta = east_m / lon_scale
+        return latitude + lat_delta, longitude + lon_delta
+
+    def get_progress_snapshot(self) -> dict[str, int | float | bool]:
+        """Return lightweight progress state for UI summaries."""
+        return {
+            "is_walking": self.is_walking,
+            "is_paused": self.is_paused,
+            "dispatched_index": self._dispatched_index,
+            "resume_segment_index": self._resume_segment_index,
+            "resume_covered_dist_km": self._resume_covered_dist,
+            "random_stop_active": self._random_stop_active,
+            "random_stop_remaining_s": self._random_stop_remaining_s,
+        }

@@ -19,7 +19,16 @@ from src.core.constants import (
 )
 from src.core.device_manager import DeviceManager
 from src.core.location_storage import LocationStorage, SavedLocationInfo
-from src.core.models import DeviceInfo, RoutePoint
+from src.core.models import DeviceInfo, MotionSettings, RoutePoint
+from src.core.motion_settings_store import MotionSettingsStore
+from src.core.route_summary import (
+    RouteSummary,
+    choose_primary_summary,
+    format_distance,
+    format_duration,
+    summarize_remaining_route,
+    summarize_route,
+)
 from src.core.route_storage import RouteStorage, SavedRouteInfo
 from src.core.route_walker import RouteWalker
 from src.core.routing import RoutingError, RoutingService
@@ -33,7 +42,7 @@ from src.ui.coordinate_inputs import (
 from src.ui.i18n import LANGUAGES, get_lang, set_lang, t
 from src.ui.tooltip import ToolTip, add_tooltip_button
 from src.utils.logger import get_log_file_path, logger
-from src.utils.paths import get_cache_dir, resource_path
+from src.utils.paths import get_app_data_dir, get_cache_dir, resource_path
 
 
 class AppMode(Enum):
@@ -105,6 +114,10 @@ class iFakeGPSApp(ctk.CTk):
         self.route_storage = RouteStorage(store_db)
         self.location_storage = LocationStorage(store_db)
         self.routing_service = RoutingService()
+        self.motion_settings_store = MotionSettingsStore(
+            get_app_data_dir() / "motion_settings.json"
+        )
+        self.motion_settings = self.motion_settings_store.load()
 
         # State
         self.mode = AppMode.SINGLE_POINT
@@ -117,6 +130,14 @@ class iFakeGPSApp(ctk.CTk):
         self.follow_current_position = True
         self.discovered_devices: list[DeviceInfo] = []
         self.right_panel_visible = True
+        self.motion_noise_pct = self.motion_settings.noise_pct
+        self.random_stop_enabled = self.motion_settings.random_stop_enabled
+        self.random_stop_interval_m = self.motion_settings.random_stop_interval_m
+        self.random_stop_min_s = self.motion_settings.random_stop_min_s
+        self.random_stop_max_s = self.motion_settings.random_stop_max_s
+        self.displacement_noise_enabled = self.motion_settings.displacement_noise_enabled
+        self.displacement_radius_m = self.motion_settings.displacement_radius_m
+        self._motion_settings_window: Optional[ctk.CTkToplevel] = None
 
         # Device-screen preview (burst capture) state
         self._screenshot_service = ScreenshotService(self.device_manager)
@@ -130,6 +151,15 @@ class iFakeGPSApp(ctk.CTk):
 
         # Build UI
         self._create_ui()
+        self._apply_motion_settings(
+            noise_pct=self.motion_noise_pct,
+            random_stop_enabled=self.random_stop_enabled,
+            random_stop_interval_m=self.random_stop_interval_m,
+            random_stop_min_s=self.random_stop_min_s,
+            random_stop_max_s=self.random_stop_max_s,
+            displacement_noise_enabled=self.displacement_noise_enabled,
+            displacement_radius_m=self.displacement_radius_m,
+        )
 
         # Bind events
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -368,14 +398,14 @@ class iFakeGPSApp(ctk.CTk):
             font=ctk.CTkFont(size=14),
             text_color="gray",
         )
-        subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 10))
+        subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 12))
 
         # Device selection section
         device_frame = ctk.CTkFrame(sidebar)
-        device_frame.grid(row=3, column=0, padx=15, pady=10, sticky="ew")
+        device_frame.grid(row=3, column=0, padx=15, pady=(6, 8), sticky="ew")
 
         device_header = ctk.CTkFrame(device_frame, fg_color="transparent")
-        device_header.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
+        device_header.grid(row=0, column=0, padx=10, pady=(10, 6), sticky="ew")
         device_header.grid_columnconfigure(0, weight=1)
 
         # Store label ref for update
@@ -421,7 +451,7 @@ class iFakeGPSApp(ctk.CTk):
             font=ctk.CTkFont(size=12),
             text_color="#ef4444",
         )
-        self.conn_status.grid(row=2, column=0, padx=10, pady=(5, 10))
+        self.conn_status.grid(row=2, column=0, padx=10, pady=(6, 10))
 
         # Disconnect button
         self.disconnect_btn = ctk.CTkButton(
@@ -432,34 +462,11 @@ class iFakeGPSApp(ctk.CTk):
             hover_color="#4b5563",
             height=28,
         )
-        self.disconnect_btn.grid(row=3, column=0, padx=10, pady=(0, 5), sticky="ew")
-
-        # Wireless button
-        self.enable_wireless_btn = ctk.CTkButton(
-            device_frame,
-            text=t("btn_enable_wireless"),
-            command=self._enable_wireless_flow,
-            fg_color="#374151",
-            hover_color="#4b5563",
-            height=28,
-        )
-        self.enable_wireless_btn.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="ew")
-        add_tooltip_button(device_frame, text=t("tip_wireless")).grid(row=4, column=0, padx=(0, 10), sticky="e")
-
-        # Device screen preview (requires a connected device)
-        self.btn_device_preview = ctk.CTkButton(
-            device_frame,
-            text=f"📱  {t('btn_device_preview')}",
-            command=self._open_device_preview,
-            fg_color="#374151",
-            hover_color="#4b5563",
-            height=28,
-        )
-        self.btn_device_preview.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="ew")
+        self.disconnect_btn.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
 
         # Mode selection
         mode_frame = ctk.CTkFrame(sidebar)
-        mode_frame.grid(row=4, column=0, padx=15, pady=10, sticky="ew")
+        mode_frame.grid(row=4, column=0, padx=15, pady=(0, 8), sticky="ew")
 
         ctk.CTkLabel(
             mode_frame, text=t("mode_label"), font=ctk.CTkFont(size=16, weight="bold")
@@ -487,7 +494,7 @@ class iFakeGPSApp(ctk.CTk):
 
         # Route controls
         self.route_frame = ctk.CTkFrame(sidebar)
-        self.route_frame.grid(row=5, column=0, padx=15, pady=5, sticky="ew")
+        self.route_frame.grid(row=5, column=0, padx=15, pady=(0, 8), sticky="ew")
 
         self.lbl_route = ctk.CTkLabel(
             self.route_frame,
@@ -498,9 +505,39 @@ class iFakeGPSApp(ctk.CTk):
             row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w"
         )
 
+        preset_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
+        preset_frame.grid(
+            row=1, column=0, columnspan=2, padx=10, pady=(0, 4), sticky="ew"
+        )
+        preset_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
+        self.btn_speed_preset_walk = ctk.CTkButton(
+            preset_frame,
+            text=t("btn_speed_preset_walk"),
+            height=28,
+            command=lambda: self._apply_speed_preset(5.0),
+        )
+        self.btn_speed_preset_walk.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+
+        self.btn_speed_preset_bike = ctk.CTkButton(
+            preset_frame,
+            text=t("btn_speed_preset_bike"),
+            height=28,
+            command=lambda: self._apply_speed_preset(20.0),
+        )
+        self.btn_speed_preset_bike.grid(row=0, column=1, padx=2, sticky="ew")
+
+        self.btn_speed_preset_drive = ctk.CTkButton(
+            preset_frame,
+            text=t("btn_speed_preset_drive"),
+            height=28,
+            command=lambda: self._apply_speed_preset(60.0),
+        )
+        self.btn_speed_preset_drive.grid(row=0, column=2, padx=(4, 0), sticky="ew")
+
         # Speed slider — label row with tooltip icon
         speed_label_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
-        speed_label_frame.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        speed_label_frame.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
         self.lbl_speed = ctk.CTkLabel(speed_label_frame, text=t("speed_label"))
         self.lbl_speed.pack(side="left")
@@ -511,7 +548,7 @@ class iFakeGPSApp(ctk.CTk):
         self._speed_tip_icon.pack(side="left", padx=(2, 0))
 
         speed_val_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
-        speed_val_frame.grid(row=1, column=1, padx=10, pady=5, sticky="e")
+        speed_val_frame.grid(row=2, column=1, padx=10, pady=5, sticky="e")
 
         self.speed_entry_var = ctk.StringVar(value="20.0")
         self.speed_entry = ctk.CTkEntry(
@@ -538,38 +575,36 @@ class iFakeGPSApp(ctk.CTk):
             command=self._on_speed_slider_change,
         )
         self.speed_slider.grid(
-            row=2, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
+            row=3, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
         )
         self.speed_slider.set(20)
         self.route_walker.set_speed(20.0)
 
-        # Speed noise slider — label row with tooltip icon
-        noise_label_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
-        noise_label_frame.grid(row=3, column=0, padx=10, pady=5, sticky="w")
-
-        self.lbl_noise = ctk.CTkLabel(noise_label_frame, text=t("noise_label"))
-        self.lbl_noise.pack(side="left")
-
-        self._noise_tip_icon = add_tooltip_button(
-            noise_label_frame, text=t("tip_noise")
+        motion_action_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
+        motion_action_frame.grid(
+            row=4, column=0, columnspan=2, padx=10, pady=6, sticky="ew"
         )
-        self._noise_tip_icon.pack(side="left", padx=(2, 0))
+        motion_action_frame.grid_columnconfigure((0, 1), weight=1)
 
-        self.noise_value_label = ctk.CTkLabel(self.route_frame, text="10%")
-        self.noise_value_label.grid(row=3, column=1, padx=10, pady=5, sticky="e")
+        self.btn_motion_settings = ctk.CTkButton(
+            motion_action_frame,
+            text=t("btn_motion_settings"),
+            command=self._open_motion_settings,
+            fg_color="#374151",
+            hover_color="#4b5563",
+            height=28,
+        )
+        self.btn_motion_settings.grid(row=0, column=0, padx=(0, 4), sticky="ew")
 
-        self.noise_slider = ctk.CTkSlider(
-            self.route_frame,
-            from_=0,
-            to=50,
-            number_of_steps=50,
-            command=self._on_noise_change,
+        self.btn_device_preview = ctk.CTkButton(
+            motion_action_frame,
+            text=f"📱  {t('btn_device_preview')}",
+            command=self._open_device_preview,
+            fg_color="#374151",
+            hover_color="#4b5563",
+            height=28,
         )
-        self.noise_slider.grid(
-            row=4, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
-        )
-        self.noise_slider.set(10)
-        self.route_walker.set_speed_noise(10.0)
+        self.btn_device_preview.grid(row=0, column=1, padx=(4, 0), sticky="ew")
 
         self.route_frame.grid_columnconfigure(0, weight=1)
         self.route_frame.grid_columnconfigure(1, weight=1)
@@ -577,16 +612,29 @@ class iFakeGPSApp(ctk.CTk):
         # Route info
         self.route_info = ctk.CTkLabel(
             self.route_frame,
-            text=t("route_info", points=0, distance="0 m"),
+            text=t("route_info", points=0, distance="0 m", eta=t("route_eta_empty")),
             font=ctk.CTkFont(size=12),
             text_color="gray",
         )
-        self.route_info.grid(row=5, column=0, columnspan=2, padx=10, pady=5)
+        self.route_info.grid(
+            row=5, column=0, columnspan=2, padx=10, pady=(6, 2), sticky="w"
+        )
+        self.route_segments_info = ctk.CTkLabel(
+            self.route_frame,
+            text=t("route_remaining_empty"),
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+            justify="left",
+            anchor="w",
+        )
+        self.route_segments_info.grid(
+            row=6, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew"
+        )
 
         # Route planning buttons
         route_plan_btn_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
         route_plan_btn_frame.grid(
-            row=6, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
+            row=7, column=0, columnspan=2, padx=10, pady=(4, 5), sticky="ew"
         )
         route_plan_btn_frame.grid_columnconfigure((0, 1), weight=1)
 
@@ -611,7 +659,7 @@ class iFakeGPSApp(ctk.CTk):
         # Route walking buttons
         route_btn_frame = ctk.CTkFrame(self.route_frame, fg_color="transparent")
         route_btn_frame.grid(
-            row=7, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
+            row=8, column=0, columnspan=2, padx=10, pady=(4, 5), sticky="ew"
         )
 
         # Note: We need to assign these to self for update_ui_text
@@ -651,12 +699,12 @@ class iFakeGPSApp(ctk.CTk):
             self.route_frame, text=t("chk_loop"), variable=self.loop_var
         )
         self.chk_loop.grid(
-            row=8, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w"
+            row=9, column=0, columnspan=2, padx=10, pady=(2, 10), sticky="w"
         )
 
         # Coordinates section
         self.coord_frame = ctk.CTkFrame(sidebar)
-        self.coord_frame.grid(row=6, column=0, padx=15, pady=5, sticky="ew")
+        self.coord_frame.grid(row=6, column=0, padx=15, pady=(0, 8), sticky="ew")
 
         self.lbl_manual = ctk.CTkLabel(
             self.coord_frame,
@@ -664,24 +712,24 @@ class iFakeGPSApp(ctk.CTk):
             font=ctk.CTkFont(size=14, weight="bold"),
         )
         self.lbl_manual.grid(
-            row=0, column=0, columnspan=2, padx=10, pady=(5, 5), sticky="w"
+            row=0, column=0, columnspan=2, padx=10, pady=(10, 6), sticky="w"
         )
 
         self.lbl_lat = ctk.CTkLabel(
             self.coord_frame, text=t("label_lat"), font=ctk.CTkFont(size=11)
         )
-        self.lbl_lat.grid(row=1, column=0, padx=10, pady=2, sticky="w")
+        self.lbl_lat.grid(row=1, column=0, padx=10, pady=(2, 3), sticky="w")
 
         self.lat_entry = ctk.CTkEntry(self.coord_frame, height=24)
-        self.lat_entry.grid(row=1, column=1, padx=10, pady=2, sticky="ew")
+        self.lat_entry.grid(row=1, column=1, padx=10, pady=(2, 3), sticky="ew")
 
         self.lbl_lon = ctk.CTkLabel(
             self.coord_frame, text=t("label_lon"), font=ctk.CTkFont(size=11)
         )
-        self.lbl_lon.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.lbl_lon.grid(row=2, column=0, padx=10, pady=(3, 4), sticky="w")
 
         self.lon_entry = ctk.CTkEntry(self.coord_frame, height=24)
-        self.lon_entry.grid(row=2, column=1, padx=10, pady=2, sticky="ew")
+        self.lon_entry.grid(row=2, column=1, padx=10, pady=(3, 4), sticky="ew")
 
         self.coord_frame.grid_columnconfigure(1, weight=1)
 
@@ -693,12 +741,12 @@ class iFakeGPSApp(ctk.CTk):
             hover_color="#7c3aed",
         )
         self.btn_teleport.grid(
-            row=3, column=0, columnspan=2, padx=10, pady=10, sticky="ew"
+            row=3, column=0, columnspan=2, padx=10, pady=(10, 8), sticky="ew"
         )
 
         # Global clear-location button (always visible across modes)
         self.clear_location_btn = ctk.CTkButton(
-            sidebar,
+            self.coord_frame,
             text=t("btn_clear_location"),
             command=self._clear_location,
             fg_color="#6b7280",
@@ -706,7 +754,7 @@ class iFakeGPSApp(ctk.CTk):
             height=30,
         )
         self.clear_location_btn.grid(
-            row=7, column=0, padx=15, pady=(5, 5), sticky="ew"
+            row=4, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew"
         )
 
         # Info label at bottom
@@ -719,10 +767,11 @@ class iFakeGPSApp(ctk.CTk):
         )
         self.info_label = info_label
         info_label.grid(row=9, column=0, padx=15, pady=(20, 5), sticky="sw")
+        
 
         # Language selector
         lang_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        lang_frame.grid(row=10, column=0, padx=15, pady=(0, 15), sticky="sw")
+        lang_frame.grid(row=10, column=0, padx=15, pady=(0, 14), sticky="sw")
 
         self.lang_label = ctk.CTkLabel(
             lang_frame, text=t("lang_label"), font=ctk.CTkFont(size=11)
@@ -1161,18 +1210,20 @@ class iFakeGPSApp(ctk.CTk):
             self.lbl_route.configure(text=t("route_walking"))
         if hasattr(self, "lbl_speed"):
             self.lbl_speed.configure(text=t("speed_label"))
-        if hasattr(self, "lbl_noise"):
-            self.lbl_noise.configure(text=t("noise_label"))
+        if hasattr(self, "btn_speed_preset_walk"):
+            self.btn_speed_preset_walk.configure(text=t("btn_speed_preset_walk"))
+        if hasattr(self, "btn_speed_preset_bike"):
+            self.btn_speed_preset_bike.configure(text=t("btn_speed_preset_bike"))
+        if hasattr(self, "btn_speed_preset_drive"):
+            self.btn_speed_preset_drive.configure(text=t("btn_speed_preset_drive"))
+        if hasattr(self, "btn_motion_settings"):
+            self.btn_motion_settings.configure(text=t("btn_motion_settings"))
 
         # Tooltip icons — update their ToolTip text
         if hasattr(self, "_speed_tip_icon"):
             from src.ui.tooltip import ToolTip
 
             ToolTip(self._speed_tip_icon, text=t("tip_speed"))
-        if hasattr(self, "_noise_tip_icon"):
-            from src.ui.tooltip import ToolTip
-
-            ToolTip(self._noise_tip_icon, text=t("tip_noise"))
 
         # Route buttons
         if hasattr(self, "start_walk_btn"):
@@ -1590,6 +1641,7 @@ class iFakeGPSApp(ctk.CTk):
         """Called after location is set."""
         if success:
             self.current_simulated_position = (lat, lon)
+            self._update_route_info()
             self.status_label.configure(
                 text=t("status_location_set", lat=f"{lat:.6f}", lon=f"{lon:.6f}")
             )
@@ -1678,41 +1730,34 @@ class iFakeGPSApp(ctk.CTk):
 
     def _update_route_info(self):
         """Update route information display."""
-        num_points = len(self.route_points)
-        total_distance = 0
+        speed_kmh = self._get_current_speed_kmh()
+        origin = self.current_simulated_position if len(self.route_points) == 1 else None
+        total_summary = summarize_route(self.route_points, speed_kmh, origin=origin)
+        remaining_summary = self._get_remaining_route_summary(speed_kmh)
+        primary_summary = choose_primary_summary(total_summary, remaining_summary)
 
-        # Note: We need a distance calculator helper or use RouteWalker's static one if we made it static
-        # But in new structure RouteWalker._haversine_distance is internal.
-        # Let's add a helper here or make it static in RouteWalker?
-        # RouteWalker in new core has _haversine_distance as private method.
-        # I'll duplicate the simple math here to avoid tight coupling or access privates.
-
-        def haversine(lat1, lon1, lat2, lon2):
-            import math
-
-            R = 6371000  # meters
-            phi1, phi2 = math.radians(lat1), math.radians(lat2)
-            dphi = math.radians(lat2 - lat1)
-            dlambda = math.radians(lon2 - lon1)
-            a = (
-                math.sin(dphi / 2) ** 2
-                + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+        self.route_info.configure(
+            text=t(
+                "route_info",
+                points=total_summary.point_count,
+                distance=format_distance(primary_summary.total_distance_m),
+                eta=(
+                    format_duration(primary_summary.total_duration_s)
+                    if primary_summary.segments or remaining_summary is not None
+                    else t("route_eta_empty")
+                ),
             )
-            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        )
 
-        for i in range(len(self.route_points) - 1):
-            p1 = self.route_points[i]
-            p2 = self.route_points[i + 1]
-            total_distance += haversine(
-                p1.latitude, p1.longitude, p2.latitude, p2.longitude
-            )
+        if remaining_summary is None:
+            self.route_segments_info.configure(text=t("route_remaining_empty"))
+            return
 
-        if total_distance >= 1000:
-            distance_str = f"{total_distance / 1000:.2f} km"
-        else:
-            distance_str = f"{total_distance:.0f} m"
+        if not remaining_summary.segments:
+            self.route_segments_info.configure(text=t("route_remaining_done"))
+            return
 
-        self.route_info.configure(text=t("route_info", points=num_points, distance=distance_str))
+        self.route_segments_info.configure(text=t("route_total_info", distance=format_distance(total_summary.total_distance_m), eta=format_duration(total_summary.total_duration_s)))
 
     def _clear_route(self):
         """Clear the current route."""
@@ -1738,6 +1783,7 @@ class iFakeGPSApp(ctk.CTk):
         speed_kmh = float(value)
         self.speed_entry_var.set(f"{speed_kmh:.1f}")
         self.route_walker.set_speed(speed_kmh)
+        self._update_route_info()
 
     def _calculate_navigation_route(self):
         """Fetch route from OSRM/ORS using the added markers."""
@@ -2294,7 +2340,281 @@ class iFakeGPSApp(ctk.CTk):
             self.speed_entry_var.set(f"{val:.1f}")
         except ValueError:
             self.speed_entry_var.set(f"{self.speed_slider.get():.1f}")
+        self._update_route_info()
         self.focus_set()
+
+    def _apply_speed_preset(self, speed_kmh: float):
+        """Apply a preset to the existing speed controls."""
+        self.speed_slider.set(speed_kmh)
+        self.speed_entry_var.set(f"{speed_kmh:.1f}")
+        self.route_walker.set_speed(speed_kmh)
+        self._update_route_info()
+        self.focus_set()
+
+    def _get_current_speed_kmh(self) -> float:
+        """Read the current speed from the UI, falling back to the slider value."""
+        try:
+            return max(0.0, float(self.speed_entry_var.get()))
+        except ValueError:
+            return float(self.speed_slider.get())
+
+    def _apply_motion_settings(
+        self,
+        noise_pct: float,
+        random_stop_enabled: bool,
+        random_stop_interval_m: float,
+        random_stop_min_s: float,
+        random_stop_max_s: float,
+        displacement_noise_enabled: bool,
+        displacement_radius_m: float,
+    ):
+        """Apply motion realism settings to UI state and the route walker."""
+        self.motion_noise_pct = max(0.0, min(50.0, float(noise_pct)))
+        self.random_stop_enabled = bool(random_stop_enabled)
+        self.random_stop_interval_m = max(1.0, float(random_stop_interval_m))
+        self.random_stop_min_s = max(1.0, float(random_stop_min_s))
+        self.random_stop_max_s = max(
+            self.random_stop_min_s, float(random_stop_max_s)
+        )
+        self.displacement_noise_enabled = bool(displacement_noise_enabled)
+        self.displacement_radius_m = max(0.0, float(displacement_radius_m))
+        self.route_walker.set_speed_noise(self.motion_noise_pct)
+        self.route_walker.set_random_stop_settings(
+            self.random_stop_enabled,
+            self.random_stop_interval_m,
+            self.random_stop_min_s,
+            self.random_stop_max_s,
+        )
+        self.route_walker.set_displacement_noise_settings(
+            self.displacement_noise_enabled,
+            self.displacement_radius_m,
+        )
+        self.motion_settings = MotionSettings(
+            noise_pct=self.motion_noise_pct,
+            random_stop_enabled=self.random_stop_enabled,
+            random_stop_interval_m=self.random_stop_interval_m,
+            random_stop_min_s=self.random_stop_min_s,
+            random_stop_max_s=self.random_stop_max_s,
+            displacement_noise_enabled=self.displacement_noise_enabled,
+            displacement_radius_m=self.displacement_radius_m,
+        )
+        motion_settings_store = self.__dict__.get("motion_settings_store")
+        if motion_settings_store is not None:
+            motion_settings_store.save(self.motion_settings)
+        self._update_route_info()
+
+    def _open_motion_settings(self):
+        """Open a small popup to edit speed noise and random stop settings."""
+        if self._motion_settings_window and self._motion_settings_window.winfo_exists():
+            self._motion_settings_window.focus()
+            return
+
+        win = ctk.CTkToplevel(self)
+        win.title(t("motion_settings_title"))
+        win.geometry("380x320")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        self._motion_settings_window = win
+
+        noise_var = ctk.DoubleVar(value=self.motion_noise_pct)
+        enabled_var = ctk.BooleanVar(value=self.random_stop_enabled)
+        interval_var = ctk.StringVar(value=f"{self.random_stop_interval_m:.0f}")
+        min_var = ctk.StringVar(value=f"{self.random_stop_min_s:.0f}")
+        max_var = ctk.StringVar(value=f"{self.random_stop_max_s:.0f}")
+        displacement_enabled_var = ctk.BooleanVar(value=self.displacement_noise_enabled)
+        displacement_radius_var = ctk.StringVar(value=f"{self.displacement_radius_m:.1f}")
+
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=14, pady=14)
+        body.grid_columnconfigure(1, weight=1)
+
+        noise_label_frame = ctk.CTkFrame(body, fg_color="transparent")
+        noise_label_frame.grid(row=0, column=0, sticky="w", pady=(0, 6))
+        ctk.CTkLabel(noise_label_frame, text=t("motion_noise_label")).pack(side="left")
+        add_tooltip_button(noise_label_frame, text=t("motion_noise_help")).pack(
+            side="left", padx=(4, 0)
+        )
+        noise_value = ctk.CTkLabel(body, text=f"{self.motion_noise_pct:.0f}%")
+        noise_value.grid(row=0, column=1, sticky="e", pady=(0, 6))
+
+        def on_noise_change(value):
+            noise_value.configure(text=f"{float(value):.0f}%")
+
+        noise_slider = ctk.CTkSlider(
+            body,
+            from_=0,
+            to=50,
+            number_of_steps=50,
+            variable=noise_var,
+            command=on_noise_change,
+        )
+        noise_slider.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+
+        random_stop_row = ctk.CTkFrame(body, fg_color="transparent")
+        random_stop_row.grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        random_stop_switch = ctk.CTkSwitch(
+            random_stop_row,
+            text=t("motion_random_stop_label"),
+            variable=enabled_var,
+            onvalue=True,
+            offvalue=False,
+        )
+        random_stop_switch.pack(side="left")
+        add_tooltip_button(
+            random_stop_row, text=t("motion_random_stop_help")
+        ).pack(side="left", padx=(4, 0))
+
+        interval_label_frame = ctk.CTkFrame(body, fg_color="transparent")
+        interval_label_frame.grid(row=3, column=0, sticky="w", pady=4)
+        ctk.CTkLabel(interval_label_frame, text=t("motion_stop_interval_label")).pack(
+            side="left"
+        )
+        add_tooltip_button(
+            interval_label_frame, text=t("motion_stop_interval_help")
+        ).pack(side="left", padx=(4, 0))
+        interval_entry = ctk.CTkEntry(body, textvariable=interval_var, width=90)
+        interval_entry.grid(row=3, column=1, sticky="e", pady=4)
+
+        min_label_frame = ctk.CTkFrame(body, fg_color="transparent")
+        min_label_frame.grid(row=4, column=0, sticky="w", pady=4)
+        ctk.CTkLabel(min_label_frame, text=t("motion_stop_min_label")).pack(side="left")
+        add_tooltip_button(min_label_frame, text=t("motion_stop_min_help")).pack(
+            side="left", padx=(4, 0)
+        )
+        min_entry = ctk.CTkEntry(body, textvariable=min_var, width=90)
+        min_entry.grid(row=4, column=1, sticky="e", pady=4)
+
+        max_label_frame = ctk.CTkFrame(body, fg_color="transparent")
+        max_label_frame.grid(row=5, column=0, sticky="w", pady=4)
+        ctk.CTkLabel(max_label_frame, text=t("motion_stop_max_label")).pack(side="left")
+        add_tooltip_button(max_label_frame, text=t("motion_stop_max_help")).pack(
+            side="left", padx=(4, 0)
+        )
+        max_entry = ctk.CTkEntry(body, textvariable=max_var, width=90)
+        max_entry.grid(row=5, column=1, sticky="e", pady=4)
+
+        displacement_row = ctk.CTkFrame(body, fg_color="transparent")
+        displacement_row.grid(
+            row=6, column=0, columnspan=2, sticky="w", pady=(10, 8)
+        )
+        displacement_switch = ctk.CTkSwitch(
+            displacement_row,
+            text=t("motion_displacement_label"),
+            variable=displacement_enabled_var,
+            onvalue=True,
+            offvalue=False,
+        )
+        displacement_switch.pack(side="left")
+        add_tooltip_button(
+            displacement_row, text=t("motion_displacement_help")
+        ).pack(side="left", padx=(4, 0))
+
+        displacement_label_frame = ctk.CTkFrame(body, fg_color="transparent")
+        displacement_label_frame.grid(row=7, column=0, sticky="w", pady=4)
+        ctk.CTkLabel(
+            displacement_label_frame, text=t("motion_displacement_radius_label")
+        ).pack(side="left")
+        add_tooltip_button(
+            displacement_label_frame, text=t("motion_displacement_radius_help")
+        ).pack(side="left", padx=(4, 0))
+        displacement_entry = ctk.CTkEntry(
+            body, textvariable=displacement_radius_var, width=90
+        )
+        displacement_entry.grid(row=7, column=1, sticky="e", pady=4)
+
+        dependent_widgets = [interval_entry, min_entry, max_entry]
+
+        def sync_enabled_state():
+            state = "normal" if enabled_var.get() else "disabled"
+            for widget in dependent_widgets:
+                widget.configure(state=state)
+
+        random_stop_switch.configure(command=sync_enabled_state)
+        sync_enabled_state()
+
+        def sync_displacement_state():
+            displacement_entry.configure(
+                state="normal" if displacement_enabled_var.get() else "disabled"
+            )
+
+        displacement_switch.configure(command=sync_displacement_state)
+        sync_displacement_state()
+
+        footer = ctk.CTkFrame(win, fg_color="transparent")
+        footer.pack(fill="x", padx=14, pady=(0, 14))
+        footer.grid_columnconfigure((0, 1), weight=1)
+
+        def close_window():
+            if self._motion_settings_window:
+                self._motion_settings_window.destroy()
+                self._motion_settings_window = None
+
+        def save_settings():
+            try:
+                self._apply_motion_settings(
+                    noise_pct=float(noise_var.get()),
+                    random_stop_enabled=bool(enabled_var.get()),
+                    random_stop_interval_m=float(interval_var.get()),
+                    random_stop_min_s=float(min_var.get()),
+                    random_stop_max_s=float(max_var.get()),
+                    displacement_noise_enabled=bool(displacement_enabled_var.get()),
+                    displacement_radius_m=float(displacement_radius_var.get()),
+                )
+            except ValueError:
+                messagebox.showerror(
+                    t("motion_settings_invalid_title"),
+                    t("motion_settings_invalid_msg"),
+                )
+                return
+            close_window()
+
+        ctk.CTkButton(
+            footer,
+            text=t("btn_cancel"),
+            command=close_window,
+            fg_color="#6b7280",
+            hover_color="#4b5563",
+        ).grid(row=0, column=0, padx=(0, 4), sticky="ew")
+        ctk.CTkButton(
+            footer,
+            text=t("btn_apply"),
+            command=save_settings,
+        ).grid(row=0, column=1, padx=(4, 0), sticky="ew")
+        win.protocol("WM_DELETE_WINDOW", close_window)
+
+    def _get_remaining_route_summary(self, speed_kmh: float):
+        """Estimate remaining route distance/time from the current simulated position."""
+        if self.current_simulated_position is None or not self.route_points:
+            return None
+
+        if len(self.route_points) == 1:
+            return summarize_route(
+                self.route_points,
+                speed_kmh,
+                origin=self.current_simulated_position,
+            )
+
+        progress = self.route_walker.get_progress_snapshot()
+        if bool(progress["is_walking"]) or bool(progress["is_paused"]):
+            next_point_index = int(progress["resume_segment_index"]) + 1
+            summary = summarize_remaining_route(
+                self.route_points,
+                speed_kmh,
+                self.current_simulated_position,
+                next_point_index,
+            )
+            remaining_wait_s = float(progress.get("random_stop_remaining_s", 0.0))
+            if remaining_wait_s > 0:
+                summary = RouteSummary(
+                    point_count=summary.point_count,
+                    segments=summary.segments,
+                    total_distance_m=summary.total_distance_m,
+                    total_duration_s=summary.total_duration_s + remaining_wait_s,
+                )
+            return summary
+
+        return None
 
     def _on_noise_change(self, value):
         """Handle noise slider change."""
@@ -2355,6 +2675,7 @@ class iFakeGPSApp(ctk.CTk):
     def _update_walk_ui(self, lat: float, lon: float):
         """Safely update UI with new walk coordinates."""
         self.current_simulated_position = (lat, lon)
+        self._update_route_info()
         # Update current position marker
         if self.current_position_marker:
             self.current_position_marker.set_position(lat, lon)
@@ -2375,6 +2696,7 @@ class iFakeGPSApp(ctk.CTk):
 
     def _handle_walk_batch_complete_ui(self):
         """Show completion status/notification each time current batch finishes."""
+        self._update_route_info()
         self.status_label.configure(text=t("status_walk_complete"))
 
         # Use notifier utility to show a Windows toast notification
@@ -2420,6 +2742,7 @@ class iFakeGPSApp(ctk.CTk):
 
     def _handle_walk_session_end_ui(self):
         """Reset controls when a walk session is fully stopped."""
+        self._update_route_info()
         self.start_walk_btn.configure(state="normal")
         self.pause_walk_btn.configure(state="disabled")
         self.stop_walk_btn.configure(state="disabled")
@@ -2460,6 +2783,7 @@ class iFakeGPSApp(ctk.CTk):
         """Called after location is cleared."""
         if success:
             self.current_simulated_position = None
+            self._update_route_info()
             self.status_label.configure(text=t("status_location_cleared"))
             if self.current_position_marker:
                 self.current_position_marker.delete()
