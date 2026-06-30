@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.7.1] - 2026-06-30
 
 ### Fixed
 - **移動設定改為即時儲存**：現在只要調整移動噪音、隨機暫停頻率、暫停時長或位移半徑，系統就會直接記住，不需要再額外按套用。重新開啟 App 後，會延續你上次使用的設定。
