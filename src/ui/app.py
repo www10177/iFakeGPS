@@ -2403,6 +2403,31 @@ class iFakeGPSApp(ctk.CTk):
             motion_settings_store.save(self.motion_settings)
         self._update_route_info()
 
+    def _try_apply_motion_settings_values(
+        self,
+        noise_pct: float,
+        random_stop_enabled: bool,
+        random_stop_interval_text: str,
+        random_stop_min_text: str,
+        random_stop_max_text: str,
+        displacement_noise_enabled: bool,
+        displacement_radius_text: str,
+    ) -> bool:
+        """Try to persist motion settings from popup control values."""
+        try:
+            self._apply_motion_settings(
+                noise_pct=float(noise_pct),
+                random_stop_enabled=bool(random_stop_enabled),
+                random_stop_interval_m=float(random_stop_interval_text),
+                random_stop_min_s=float(random_stop_min_text),
+                random_stop_max_s=float(random_stop_max_text),
+                displacement_noise_enabled=bool(displacement_noise_enabled),
+                displacement_radius_m=float(displacement_radius_text),
+            )
+        except ValueError:
+            return False
+        return True
+
     def _open_motion_settings(self):
         """Open a small popup to edit speed noise and random stop settings."""
         if self._motion_settings_window and self._motion_settings_window.winfo_exists():
@@ -2438,8 +2463,20 @@ class iFakeGPSApp(ctk.CTk):
         noise_value = ctk.CTkLabel(body, text=f"{self.motion_noise_pct:.0f}%")
         noise_value.grid(row=0, column=1, sticky="e", pady=(0, 6))
 
+        def sync_motion_settings_live():
+            return self._try_apply_motion_settings_values(
+                noise_pct=noise_var.get(),
+                random_stop_enabled=enabled_var.get(),
+                random_stop_interval_text=interval_var.get(),
+                random_stop_min_text=min_var.get(),
+                random_stop_max_text=max_var.get(),
+                displacement_noise_enabled=displacement_enabled_var.get(),
+                displacement_radius_text=displacement_radius_var.get(),
+            )
+
         def on_noise_change(value):
             noise_value.configure(text=f"{float(value):.0f}%")
+            sync_motion_settings_live()
 
         noise_slider = ctk.CTkSlider(
             body,
@@ -2530,7 +2567,11 @@ class iFakeGPSApp(ctk.CTk):
             for widget in dependent_widgets:
                 widget.configure(state=state)
 
-        random_stop_switch.configure(command=sync_enabled_state)
+        def on_random_stop_toggle():
+            sync_enabled_state()
+            sync_motion_settings_live()
+
+        random_stop_switch.configure(command=on_random_stop_toggle)
         sync_enabled_state()
 
         def sync_displacement_state():
@@ -2538,30 +2579,32 @@ class iFakeGPSApp(ctk.CTk):
                 state="normal" if displacement_enabled_var.get() else "disabled"
             )
 
-        displacement_switch.configure(command=sync_displacement_state)
+        def on_displacement_toggle():
+            sync_displacement_state()
+            sync_motion_settings_live()
+
+        displacement_switch.configure(command=on_displacement_toggle)
         sync_displacement_state()
+
+        def bind_live_apply(entry: ctk.CTkEntry):
+            entry.bind("<FocusOut>", lambda event: sync_motion_settings_live(), add="+")
+            entry.bind("<Return>", lambda event: sync_motion_settings_live(), add="+")
+
+        for entry in (interval_entry, min_entry, max_entry, displacement_entry):
+            bind_live_apply(entry)
 
         footer = ctk.CTkFrame(win, fg_color="transparent")
         footer.pack(fill="x", padx=14, pady=(0, 14))
         footer.grid_columnconfigure((0, 1), weight=1)
 
         def close_window():
+            sync_motion_settings_live()
             if self._motion_settings_window:
                 self._motion_settings_window.destroy()
                 self._motion_settings_window = None
 
         def save_settings():
-            try:
-                self._apply_motion_settings(
-                    noise_pct=float(noise_var.get()),
-                    random_stop_enabled=bool(enabled_var.get()),
-                    random_stop_interval_m=float(interval_var.get()),
-                    random_stop_min_s=float(min_var.get()),
-                    random_stop_max_s=float(max_var.get()),
-                    displacement_noise_enabled=bool(displacement_enabled_var.get()),
-                    displacement_radius_m=float(displacement_radius_var.get()),
-                )
-            except ValueError:
+            if not sync_motion_settings_live():
                 messagebox.showerror(
                     t("motion_settings_invalid_title"),
                     t("motion_settings_invalid_msg"),

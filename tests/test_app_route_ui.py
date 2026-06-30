@@ -150,6 +150,7 @@ class AppRouteUiTests(unittest.TestCase):
         app = object.__new__(iFakeGPSApp)
         app.route_walker = _DummyWalker()
         app._update_route_info = MagicMock()
+        app.motion_settings_store = MagicMock()
 
         app._apply_motion_settings(
             noise_pct=15.0,
@@ -168,6 +169,51 @@ class AppRouteUiTests(unittest.TestCase):
         )
         self.assertEqual(app.route_walker.displacement_noise_settings, (True, 3.0))
         app._update_route_info.assert_called_once()
+        app.motion_settings_store.save.assert_called_once()
+
+    def test_try_apply_motion_settings_values_saves_valid_live_changes(self):
+        app = object.__new__(iFakeGPSApp)
+        app.route_walker = _DummyWalker()
+        app._update_route_info = MagicMock()
+        app.motion_settings_store = MagicMock()
+
+        applied = app._try_apply_motion_settings_values(
+            noise_pct=18.0,
+            random_stop_enabled=True,
+            random_stop_interval_text="200",
+            random_stop_min_text="4",
+            random_stop_max_text="9",
+            displacement_noise_enabled=True,
+            displacement_radius_text="2.5",
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(
+            app.route_walker.random_stop_settings,
+            (True, 200.0, 4.0, 9.0),
+        )
+        self.assertEqual(app.route_walker.displacement_noise_settings, (True, 2.5))
+        app.motion_settings_store.save.assert_called_once()
+
+    def test_try_apply_motion_settings_values_ignores_invalid_live_changes(self):
+        app = object.__new__(iFakeGPSApp)
+        app.route_walker = _DummyWalker()
+        app._update_route_info = MagicMock()
+        app.motion_settings_store = MagicMock()
+
+        applied = app._try_apply_motion_settings_values(
+            noise_pct=18.0,
+            random_stop_enabled=True,
+            random_stop_interval_text="oops",
+            random_stop_min_text="4",
+            random_stop_max_text="9",
+            displacement_noise_enabled=True,
+            displacement_radius_text="2.5",
+        )
+
+        self.assertFalse(applied)
+        self.assertIsNone(app.route_walker.random_stop_settings)
+        app.motion_settings_store.save.assert_not_called()
 
 
 if __name__ == "__main__":
